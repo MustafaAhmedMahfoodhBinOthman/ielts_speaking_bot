@@ -5,7 +5,7 @@ deepgram-sdk
 Pillow
 matplotlib
 numpy
-google-generative-ai
+google.generativeai
 pandas
 openai
 python-dotenv
