@@ -5,8 +5,10 @@ import json
 import requests
 import os
 import time
-appKey = "1717662733000321"
-secretKey = "7e7d1a029ebd4229b4145da5ebba4049"
+from dotenv import load_dotenv
+load_dotenv()
+appKey = os.getenv("appkey")
+secretKey = os.getenv("secretKey")
 baseURL = "https://api.speechsuper.com/"
 
 def assess_speech(audioPath, question_prompt, task_type):
