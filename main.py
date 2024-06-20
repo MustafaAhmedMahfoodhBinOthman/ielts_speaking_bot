@@ -4524,9 +4524,9 @@ async def send_user_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("send user answers function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-import os
-import aiohttp
-from moviepy.editor import AudioFileClip, concatenate_audioclips
+# import os
+# import aiohttp
+# from moviepy.editor import AudioFileClip, concatenate_audioclips
 
 # async def generate_conversation_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #     # Combine Part 1 conversation
