@@ -1881,24 +1881,28 @@ async def check_user_attempts(update: Update, context: ContextTypes.DEFAULT_TYPE
             last_attempt_time_str = result.data[0]['last_attempt_time']
             attempts_remaining = result.data[0]['attempts_remaining']
             current_time = datetime.now()
-            
-            if last_attempt_time_str:
-                last_attempt_time = datetime.strptime(last_attempt_time_str, "%Y-%m-%dT%H:%M:%S+00:00")
-                if current_time - last_attempt_time < timedelta(hours=24):
-                    if attempts_remaining > 0:
-                        return True
-                    else:
-                        return False
-                else:
-                    # Reset attempts to the maximum allowed
-                    supabase.table('ielts_speaking_users').update({
-                        'last_attempt_time': current_time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                        'attempts_remaining': 5
-                    }).eq('user_id', user_id).execute()
-                    return True
-            else:
-                # User doesn't have a last_attempt_time, allow the attempt
+            print("Number of attempts left: ",attempts_remaining)
+            if attempts_remaining > 0:
                 return True
+            else:
+                 return False
+            # if last_attempt_time_str:
+            #     last_attempt_time = datetime.strptime(last_attempt_time_str, "%Y-%m-%dT%H:%M:%S+00:00")
+            #     if current_time - last_attempt_time < timedelta(hours=24):
+            #         if attempts_remaining > 0:
+            #             return True
+            #         else:
+            #             return False
+            #     else:
+            #         # Reset attempts to the maximum allowed
+            #         supabase.table('ielts_speaking_users').update({
+            #             'last_attempt_time': current_time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+            #             'attempts_remaining': 5
+            #         }).eq('user_id', user_id).execute()
+            #         return True
+            # else:
+            #     # User doesn't have a last_attempt_time, allow the attempt
+            #     return True
         else:
             # User doesn't exist in the database, allow the attempt
             return True
