@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 import logging
 import asyncio
 from speech_assessment import assess_speech
+
 from topic_vocabularies import topic_vocabularies
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -676,8 +677,8 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("answering_question part 2")
             if voice_duration < 60:
                 await update.message.reply_text("Your answer is less than 1 minute. Please re-record your answer and make it longer.")
-            elif voice_duration > 180:
-                await update.message.reply_text("Your answer is too long more than 3 minutes. Please try to shorten your answer and re-record it.")
+            elif voice_duration > 121:
+                await update.message.reply_text("Your answer is too long more than 2 minutes . Please try to shorten your answer and re-record it.")
             else:
                 # Convert the user's voice recording to text using Deepgram STT API
                 transcribed_text = await convert_audio_to_text(update.message.voice.file_id, update, context)
@@ -690,7 +691,7 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         [InlineKeyboardButton("Try again", callback_data='part2_retry_answer')]
                     ]))
                 else:
-                    await update.message.reply_text("Sorry, I couldn't transcribe your answer. Please try again.")
+                    await update.message.reply_text("Sorry, I couldn't get your answer. Please try again.")
         elif f'{userID}answering_question' in context.user_data:
             print("answering_question part 1")
             if f'{userID}current_question' in context.user_data:
@@ -718,7 +719,7 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 [InlineKeyboardButton("Try again", callback_data='retry_answer')]
                             ]))
                         else:
-                            await update.message.reply_text("Sorry, I couldn't transcribe your answer. Please try again.")
+                            await update.message.reply_text("Sorry, I couldn't get your answer. Please try again.")
                 else:
                     print("No voice message received")
                     await update.message.reply_text("Please send a voice message as your answer.")
@@ -742,7 +743,7 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # [InlineKeyboardButton("Suggest an answer", callback_data='part3_suggest_answer')]
                 ]))
             else:
-                await update.message.reply_text("Sorry, I couldn't transcribe your answer. Please try again.")
+                await update.message.reply_text("Sorry, I couldn't get your answer. Please try again.")
         
         elif f'{userID}mock_part1_answering' in context.user_data:
             print("mock_part1_answering")
@@ -783,29 +784,34 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif f'{userID}mock_part2_answering' in context.user_data:
         # Get the user's voice answer
             user_answer_voice = update.message.voice
-
+            voice_duration = update.message.voice.duration
             if user_answer_voice:
-                # Get the file path URL of the user's voice answer
-                voice_file_path_url = await get_voice_file_path_url(user_answer_voice)
-
-                # Transcribe the user's voice answer
-                user_answer_text = await convert_audio_to_text(user_answer_voice.file_id, update, context)
-
-                if user_answer_text:
-                    # Store the user's answer text and voice file path URL in the respective lists
-                    mock_part2_answers.append(user_answer_text)
-                    # print("mock_part2_answers added to the list: ", user_answer_text)
-                    mock_part2_voice_urls.append(voice_file_path_url)
-                    # print("voice_file_path_url added to the list: ", voice_file_path_url)
-
-                    # Remove the 'mock_part2_answering' flag from context.user_data
-                    del context.user_data[f'{userID}mock_part2_answering']
-
-                    await update.effective_message.reply_text("Mock Test - Part 2 completed. Moving to Part 3.")
-                    time.sleep(5)
-                    await mock_part3_process(update, context)
+                if voice_duration < 60:
+                    await update.message.reply_text("Your answer is less than 1 minute. Please re-record your answer and make it longer.")
+                elif voice_duration > 121:
+                    await update.message.reply_text("Your answer is too long more than 2 minutes . Please try to shorten your answer and re-record it.")
                 else:
-                    await update.message.reply_text("Sorry, I couldn't transcribe your answer. Please try again.")
+                # Get the file path URL of the user's voice answer
+                    voice_file_path_url = await get_voice_file_path_url(user_answer_voice)
+
+                    # Transcribe the user's voice answer
+                    user_answer_text = await convert_audio_to_text(user_answer_voice.file_id, update, context)
+
+                    if user_answer_text:
+                        # Store the user's answer text and voice file path URL in the respective lists
+                        mock_part2_answers.append(user_answer_text)
+                        # print("mock_part2_answers added to the list: ", user_answer_text)
+                        mock_part2_voice_urls.append(voice_file_path_url)
+                        # print("voice_file_path_url added to the list: ", voice_file_path_url)
+
+                        # Remove the 'mock_part2_answering' flag from context.user_data
+                        del context.user_data[f'{userID}mock_part2_answering']
+
+                        await update.effective_message.reply_text("Mock Test - Part 2 completed. Moving to Part 3.")
+                        time.sleep(5)
+                        await mock_part3_process(update, context)
+                    else:
+                        await update.message.reply_text("Sorry, I couldn't get your answer. Please try again.")
             else:
                 # Send a message to the user asking them to try again
                 await update.message.reply_text("Please provide a voice message with your answer.")
@@ -837,7 +843,7 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     # Call the mock_part3_process function to ask the next question or show next steps
                     await mock_part3_process(update, context)
                 else:
-                    await update.message.reply_text("Sorry, I couldn't transcribe your answer. Please try again.")
+                    await update.message.reply_text("Sorry, I couldn't get your answer. Please try again.")
             else:
                 # Send a message to the user asking them to try again
                 await update.message.reply_text("Please provide a voice message with your answer.")
@@ -1828,7 +1834,6 @@ async def generate_charts(scores_df):
 
     return charts
 
-
 async def increment_practice_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_user.id
@@ -1864,7 +1869,6 @@ async def increment_practice_count(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         print("increment practice count function ",e)
         # await update.message.reply_text(issue_message)
-
 
 async def display_charts(update: Update, context: ContextTypes.DEFAULT_TYPE, charts: list):
     for chart in charts:
@@ -2465,6 +2469,9 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
             fluency_avg = sum(score["fluency"] for score in scores_list) / len(scores_list)
             grammar_avg = sum(score["grammar"] for score in scores_list) / len(scores_list)
             vocabulary_avg = sum(score["vocabulary"] for score in scores_list) / len(scores_list)
+            
+            # overall_avg = (pronunciation_avg + fluency_avg + grammar_avg + vocabulary_avg) / 4
+            # print(overall_avg)
             # Round the scores to the nearest 0.5
             overall_avg = round_to_ielts_score(overall_avg)
             pronunciation_avg = round_to_ielts_score(pronunciation_avg)
@@ -2744,9 +2751,10 @@ async def generate_suggested_answer(question, previous_answer, part_type):
         print("feadback report generated")
         return result
 async def send_long_message(update, context, message):
+    num_mesages = len(message)
     try:
         max_length = 4096  # Maximum message length allowed by Telegram
-        message_chunks = [message[i:i+max_length] for i in range(0, len(message), max_length)]
+        message_chunks = [message[i:i+max_length] for i in range(0, num_mesages, max_length)]
         
         for chunk in message_chunks:
             await context.bot.send_message(chat_id=update.effective_chat.id, text=chunk)
@@ -2767,38 +2775,60 @@ async def assess_speech_async(audio_url, question_prompt, task_type):
         # Save the downloaded file locally
         with open(filename, "wb") as file:
             file.write(response.content)
-        scores,analysis_data = assess_speech(filename, question_prompt, task_type)
-        response_json = scores  # Assuming assess_speech returns the JSON response directly
+        # scores,analysis_data = assess_speech(filename, question_prompt, task_type)
+        # response_json = scores  # Assuming assess_speech returns the JSON response directly
+        # analysis_list.append(analysis_data)
+        # # print(analysis_data)
+        # if 'result' in response_json:
+        #     result = response_json['result']
+        #     scores = {
+        #         "overall": result.get("overall", "N/A"),
+        #         "pronunciation": result.get("pronunciation", "N/A"),
+        #         "fluency": result.get("fluency_coherence", "N/A"),
+        #         "grammar": result.get("grammar", "N/A"),
+        #         "vocabulary": result.get("lexical_resource", "N/A"),
+        #         "relevance": result.get("relevance", "N/A"),
+        #         "transcription": result.get("transcription", "N/A"),
+        #         # "pause_filler": result.get("pause_filler", {}),
+        #         "sentences": [
+        #             {
+        #                 "sentence": sentence.get("sentence", ""),
+        #                 "pronunciation": sentence.get("pronunciation", "N/A"),
+        #                 "grammar": sentence.get("grammar", {}).get("corrected", "")
+        #             }
+        #             for sentence in result.get("sentences", [])
+        #         ]
+        #     }
+        #     # analysis_list.append(scores)
+        
+        # # end_time = time.time()
+        # # execution_time = end_time - start_time
+        # # print(f"Execution time: {execution_time} seconds")
+        # os.remove(filename)
+        # # print(scores)
+        # return scores
+        scores, analysis_data = assess_speech(filename, question_prompt)
         analysis_list.append(analysis_data)
         # print(analysis_data)
-        if 'result' in response_json:
-            result = response_json['result']
-            scores = {
-                "overall": result.get("overall", "N/A"),
-                "pronunciation": result.get("pronunciation", "N/A"),
-                "fluency": result.get("fluency_coherence", "N/A"),
-                "grammar": result.get("grammar", "N/A"),
-                "vocabulary": result.get("lexical_resource", "N/A"),
-                "relevance": result.get("relevance", "N/A"),
-                "transcription": result.get("transcription", "N/A"),
-                "pause_filler": result.get("pause_filler", {}),
-                "sentences": [
-                    {
-                        "sentence": sentence.get("sentence", ""),
-                        "pronunciation": sentence.get("pronunciation", "N/A"),
-                        "grammar": sentence.get("grammar", {}).get("corrected", "")
-                    }
-                    for sentence in result.get("sentences", [])
-                ]
-            }
-            # analysis_list.append(scores)
-        
-        # end_time = time.time()
-        # execution_time = end_time - start_time
-        # print(f"Execution time: {execution_time} seconds")
+        # Process the scores and analysis_data to match the expected output format
+        processed_scores = {
+            "overall": scores['ielts_score']['overall'],
+            "pronunciation": scores['ielts_score']['pronunciation'],
+            "fluency": scores['ielts_score']['fluency'],
+            "grammar": scores['ielts_score']['grammar'],
+            "vocabulary": scores['ielts_score']['vocabulary'],
+            "relevance": scores['relevance']['class'],
+            "transcription": scores['transcription'],
+            # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
+        }
+
+        # Add word-level details to the processed_scores
+        # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
+
+        # Clean up the temporary file
         os.remove(filename)
-        # print(scores)
-        return scores
+        # print(processed_scores)
+        return processed_scores
     except Exception as e:
         print(f"Error assessing speech: {str(e)}")
         return None
@@ -2817,36 +2847,53 @@ async def assess_part2_speech_async(audio_url, question_prompt, task_type) :
         
         # Assess the speech using the existing assess_speech function
         scores, analysis_data = assess_speech(filename, question_prompt, task_type)
-        response_json = scores  # Assuming assess_speech returns the JSON response directly
+        # response_json = scores  # Assuming assess_speech returns the JSON response directly
         analysis2_list.append(analysis_data)
-        if 'result' in response_json:
-            result = response_json['result']
-            scores = {
-                "overall": result.get("overall", "N/A"),
-                "pronunciation": result.get("pronunciation", "N/A"),
-                "fluency": result.get("fluency_coherence", "N/A"),
-                "grammar": result.get("grammar", "N/A"),
-                "vocabulary": result.get("lexical_resource", "N/A"),
-                "relevance": result.get("relevance", "N/A"),
-                "transcription": result.get("transcription", "N/A"),
-                "pause_filler": result.get("pause_filler", {}),
-                "sentences": [
-                    {
-                        "sentence": sentence.get("sentence", ""),
-                        "pronunciation": sentence.get("pronunciation", "N/A"),
-                        "grammar": sentence.get("grammar", {}).get("corrected", "")
-                    }
-                    for sentence in result.get("sentences", [])
-                ]
-            }
+        # if 'result' in response_json:
+        #     result = response_json['result']
+        #     scores = {
+        #         "overall": result.get("overall", "N/A"),
+        #         "pronunciation": result.get("pronunciation", "N/A"),
+        #         "fluency": result.get("fluency_coherence", "N/A"),
+        #         "grammar": result.get("grammar", "N/A"),
+        #         "vocabulary": result.get("lexical_resource", "N/A"),
+        #         "relevance": result.get("relevance", "N/A"),
+        #         "transcription": result.get("transcription", "N/A"),
+        #         "pause_filler": result.get("pause_filler", {}),
+        #         "sentences": [
+        #             {
+        #                 "sentence": sentence.get("sentence", ""),
+        #                 "pronunciation": sentence.get("pronunciation", "N/A"),
+        #                 "grammar": sentence.get("grammar", {}).get("corrected", "")
+        #             }
+        #             for sentence in result.get("sentences", [])
+        #         ]
+        #     }
         
+        # os.remove(filename)
+        # # print(analysis_data)
+        # return scores
+        processed_scores = {
+            "overall": scores['ielts_score']['overall'],
+            "pronunciation": scores['ielts_score']['pronunciation'],
+            "fluency": scores['ielts_score']['fluency'],
+            "grammar": scores['ielts_score']['grammar'],
+            "vocabulary": scores['ielts_score']['vocabulary'],
+            "relevance": scores['relevance']['class'],
+            "transcription": scores['transcription'],
+            # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
+        }
+
+        # Add word-level details to the processed_scores
+        # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
+
+        # Clean up the temporary file
         os.remove(filename)
-        # print(analysis_data)
-        return scores
+        # print(processed_scores)
+        return processed_scores
     except Exception as e:
         print(f"Error assessing speech: {str(e)}")
         return None
-
 async def generate_typical_answers(questions, answers):
     try:
         prompt = "Provide typical answers for the following IELTS speaking questions and user answers:\n\n"
@@ -2946,13 +2993,13 @@ async def generate_feedback(scores_list, questions, answers, overall_avg):
             prompt += f"Fluency score: {scores_list[i]['fluency']}\n"
             prompt += f"Grammar score: {scores_list[i]['grammar']}\n"
             prompt += f"Vocabulary score: {scores_list[i]['vocabulary']}\n"
-            prompt += f"Fillers: {scores_list[i]['pause_filler']}\n"
-            prompt += "Sentences of the answer (here is a detailed summary of the sentences in the answer):\n"
-            for sentence in scores_list[i]['sentences']:
-                prompt += f"  - Sentence: {sentence['sentence']}\n"
-                prompt += f"    Pronunciation of the sentence: {sentence['pronunciation']}\n"
-                prompt += f"    Grammar Correction if mistakes exist: {sentence['grammar']}\n"
-            prompt += "\n"
+            # prompt += f"Fillers: {scores_list[i]['pause_filler']}\n"
+            # prompt += "Sentences of the answer (here is a detailed summary of the sentences in the answer):\n"
+            # for sentence in scores_list[i]['sentences']:
+            #     prompt += f"  - Sentence: {sentence['sentence']}\n"
+            #     prompt += f"    Pronunciation of the sentence: {sentence['pronunciation']}\n"
+            #     prompt += f"    Grammar Correction if mistakes exist: {sentence['grammar']}\n"
+            # prompt += "\n"
         # prompt += f"Provide an overall feedback report on the user's performance, including pronunciation, fluency, grammar, and vocabulary etc. and here are the ielts speaking band score of part 1 {overall_avg} you should provide a clear and good feedback to the IELTS Candidate he expects to kmow his mistakes and improve next time and  best tips and suggetions to  get hisa imed score {targeted_score}"
         prompt += f"""
             Please provide a detailed feedback report on the user's performance in Part 1 of the IELTS speaking test, covering aspects such as pronunciation, fluency and coherence, grammatical range and accuracy, lexical resource (vocabulary), interactive communication, and overall performance. Offer specific examples, constructive feedback, and practical suggestions for each aspect to help the candidate identify their strengths and weaknesses. Emphasize the importance of continuous practice, active listening, and critical thinking to enhance their performance and provide language learning strategies. Encourage the candidate to reflect on their performance and set achievable goals for their IELTS speaking development. Your feedback should be supportive and encouraging, aiming to motivate the candidate in their IELTS speaking journey. Organize the feedback in a clear and structured manner, using headings and bullet points for easy readability and do not  write any non-needed text.
@@ -3280,10 +3327,10 @@ async def generate_detailed2_feedback(update: Update, context: ContextTypes.DEFA
         print("generate detailed feedback part 2 function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
+
 def generate_pronunciation_visualization(answer_data):
     try:
-        # Extract the sentences and word pronunciation details from the answer data
-        sentences = answer_data['scores']['sentences']
+        # Extract the word pronunciation details from the answer data
         word_pronunciation_details = answer_data['word_pronunciation_details']
         
         # Define colors for pronunciation scores
@@ -3315,20 +3362,15 @@ def generate_pronunciation_visualization(answer_data):
         
         total_height = y + padding  # Start with the initial padding
         
-        for sentence_details in word_pronunciation_details:
-            x = padding  # Starting x position for each sentence
-            for word_info in sentence_details:
-                word = word_info['word']
-                word_width, word_height = draw.textbbox((0, 0), word, font=text_font)[2:]
-                
-                # Check if word fits in the current line, if not move to the next line
-                if x + word_width > max_line_width:
-                    x = padding
-                    y += word_height + 10
-                
-                x += word_width + 10
+        for word_info in word_pronunciation_details:
+            word = word_info['word']
+            word_width, word_height = draw.textbbox((0, 0), word, font=text_font)[2:]
             
-            y += word_height + 20  # Increase y position for next sentence
+            # Check if word fits in the current line, if not move to the next line
+            if y + word_width > max_line_width:
+                y += word_height + 10
+            
+            y += word_height + 10
         
         # Add space for the guide
         total_height = y + word_height + 50  # Extra space for the guide
@@ -3344,32 +3386,29 @@ def generate_pronunciation_visualization(answer_data):
         title_y = padding
         draw.text((title_x, title_y), title, font=title_font, fill=(0, 0, 0))
         
-        # Draw sentences and colored words with word wrapping
+        # Draw words with color coding
         y = title_y + title_height + 40
-        for sentence, sentence_details in zip(sentences, word_pronunciation_details):
-            x = padding  # Starting x position for each sentence
-            for word_info in sentence_details:
-                word = word_info['word']
-                score = word_info['pronunciation']
-                
-                if score >= 80:
-                    color = colors['Correct Pronunciation +80/100']
-                elif score >= 50:
-                    color = colors['Slightly Incorrect Pronunciation +50/100']
-                else:
-                    color = colors['Incorrect Pronunciation -50/100']
-                
-                word_width, word_height = draw.textbbox((0, 0), word, font=text_font)[2:]
-                
-                # Check if word fits in the current line, if not move to the next line
-                if x + word_width > max_line_width:
-                    x = padding
-                    y += word_height + 10
-                
-                draw.text((x, y), word, font=text_font, fill=color)
-                x += word_width + 10
+        x = padding
+        for word_info in word_pronunciation_details:
+            word = word_info['word']
+            score = float(word_info['pronunciation'])  # Ensure score is a float
             
-            y += word_height + 20  # Increase y position for next sentence
+            if score >= 80:
+                color = colors['Correct Pronunciation +80/100']
+            elif score >= 50:
+                color = colors['Slightly Incorrect Pronunciation +50/100']
+            else:
+                color = colors['Incorrect Pronunciation -50/100']
+            
+            word_width, word_height = draw.textbbox((0, 0), word, font=text_font)[2:]
+            
+            # Check if word fits in the current line, if not move to the next line
+            if x + word_width > max_line_width:
+                x = padding
+                y += word_height + 10
+            
+            draw.text((x, y), word, font=text_font, fill=color)
+            x += word_width + 10
         
         # Draw color guide
         guide_x = padding
@@ -3386,9 +3425,8 @@ def generate_pronunciation_visualization(answer_data):
         # Save the image to a file or send it directly to the user
         image.save('pronunciation_visualization_with_padding.png')
     except Exception as e:
-        print("generate pronunciation visulization function ",e)
+        print("generate pronunciation visualization function ", e)
         # await update.message.reply_text(issue_message)
-
 async def convert_answer_to_audio(user_answer, speed):
     global  examiner_voice
     if examiner_voice== "":
@@ -3799,33 +3837,51 @@ async def assess_part3_speech_async(audio_url, question_prompt, task_type):
         
         # Assess the speech using the existing assess_speech function
         scores, analysis_data = assess_speech(filename, question_prompt, task_type)
-        response_json = scores  # Assuming assess_speech returns the JSON response directly
+        # response_json = scores  # Assuming assess_speech returns the JSON response directly
         analysis3_list.append(analysis_data)
         # print(analysis_data)
         # print('\n\nanalysis_data added succussfuly')
-        if 'result' in response_json:
-            result = response_json['result']
-            scores = {
-                "overall": result.get("overall", "N/A"),
-                "pronunciation": result.get("pronunciation", "N/A"),
-                "fluency": result.get("fluency_coherence", "N/A"),
-                "grammar": result.get("grammar", "N/A"),
-                "vocabulary": result.get("lexical_resource", "N/A"),
-                "relevance": result.get("relevance", "N/A"),
-                "transcription": result.get("transcription", "N/A"),
-                "pause_filler": result.get("pause_filler", {}),
-                "sentences": [
-                    {
-                        "sentence": sentence.get("sentence", ""),
-                        "pronunciation": sentence.get("pronunciation", "N/A"),
-                        "grammar": sentence.get("grammar", {}).get("corrected", "")
-                    }
-                    for sentence in result.get("sentences", [])
-                ]
-            }
+        # if 'result' in response_json:
+        #     result = response_json['result']
+        #     scores = {
+        #         "overall": result.get("overall", "N/A"),
+        #         "pronunciation": result.get("pronunciation", "N/A"),
+        #         "fluency": result.get("fluency_coherence", "N/A"),
+        #         "grammar": result.get("grammar", "N/A"),
+        #         "vocabulary": result.get("lexical_resource", "N/A"),
+        #         "relevance": result.get("relevance", "N/A"),
+        #         "transcription": result.get("transcription", "N/A"),
+        #         "pause_filler": result.get("pause_filler", {}),
+        #         "sentences": [
+        #             {
+        #                 "sentence": sentence.get("sentence", ""),
+        #                 "pronunciation": sentence.get("pronunciation", "N/A"),
+        #                 "grammar": sentence.get("grammar", {}).get("corrected", "")
+        #             }
+        #             for sentence in result.get("sentences", [])
+        #         ]
+        #     }
         
+        # os.remove(filename)
+        # return scores
+        processed_scores = {
+            "overall": scores['ielts_score']['overall'],
+            "pronunciation": scores['ielts_score']['pronunciation'],
+            "fluency": scores['ielts_score']['fluency'],
+            "grammar": scores['ielts_score']['grammar'],
+            "vocabulary": scores['ielts_score']['vocabulary'],
+            "relevance": scores['relevance']['class'],
+            "transcription": scores['transcription'],
+            # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
+        }
+
+        # Add word-level details to the processed_scores
+        # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
+
+        # Clean up the temporary file
         os.remove(filename)
-        return scores
+        # print(processed_scores)
+        return processed_scores
     except Exception as e:
         print(f"Error assessing speech: {str(e)}")
         return None
@@ -3841,13 +3897,13 @@ async def generate_feedback3(scores_list, questions, answers, overall_avg):
             prompt += f"Fluency score: {scores_list[i]['fluency']}\n"
             prompt += f"Grammar score: {scores_list[i]['grammar']}\n"
             prompt += f"Vocabulary score: {scores_list[i]['vocabulary']}\n"
-            prompt += f"Fillers: {scores_list[i]['pause_filler']}\n"
-            prompt += "Sentences of the answer (here is a detailed summary of the sentences in the answer):\n"
-            for sentence in scores_list[i]['sentences']:
-                prompt += f"  - Sentence: {sentence['sentence']}\n"
-                prompt += f"    Pronunciation of the sentence: {sentence['pronunciation']}\n"
-                prompt += f"    Grammar Correction if mistakes exist: {sentence['grammar']}\n"
-            prompt += "\n"
+            # prompt += f"Fillers: {scores_list[i]['pause_filler']}\n"
+            # prompt += "Sentences of the answer (here is a detailed summary of the sentences in the answer):\n"
+            # for sentence in scores_list[i]['sentences']:
+            #     prompt += f"  - Sentence: {sentence['sentence']}\n"
+            #     prompt += f"    Pronunciation of the sentence: {sentence['pronunciation']}\n"
+            #     prompt += f"    Grammar Correction if mistakes exist: {sentence['grammar']}\n"
+            # prompt += "\n"
         # prompt +=  f"Provide an overall feedback report on the user's performance, including pronunciation, fluency, grammar, and vocabulary etc. and here are the ielts speaking band score of part 3 {overall_avg} you should provide a clear and good feedback to the IELTS Candidate he expects to kmow his mistakes and improve next time and  best tips and suggetions to  get hisa imed score {targeted_score}"
         prompt += f"""
            Please provide a detailed feedback report on the user's performance in Part 3 of the IELTS speaking test, covering aspects such as pronunciation, fluency and coherence, grammatical range and accuracy, lexical resource (vocabulary), interactive communication, and overall performance. Offer specific examples, constructive feedback, and practical suggestions for each aspect to help the candidate identify their strengths and weaknesses. Emphasize the importance of continuous practice, active listening, and critical thinking to enhance their performance and provide language learning strategies. Encourage the candidate to reflect on their performance and set achievable goals for their IELTS speaking development. Your feedback should be supportive and encouraging, aiming to motivate the candidate in their IELTS speaking journey. Organize the feedback in a clear and structured manner, using headings and bullet points for easy readability and do not  write any non-needed text.
@@ -4101,7 +4157,7 @@ async def part3_show_results(update: Update, context: ContextTypes.DEFAULT_TYPE)
             fluency_avg = sum(score["fluency"] for score in scores_list) / len(scores_list)
             grammar_avg = sum(score["grammar"] for score in scores_list) / len(scores_list)
             vocabulary_avg = sum(score["vocabulary"] for score in scores_list) / len(scores_list)
-            
+            # overall_avg = (pronunciation_avg + fluency_avg + grammar_avg + vocabulary_avg) / 4
             # Round the scores to the nearest 0.5
             overall_avg = round_to_ielts_score(overall_avg)
             pronunciation_avg = round_to_ielts_score(pronunciation_avg)
@@ -4185,7 +4241,6 @@ async def part3_detailed_results(update: Update, context: ContextTypes.DEFAULT_T
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
 #-----------------MOCK TEST FUNCTIONS-----------------
-
 
 async def start_mock_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -4446,7 +4501,7 @@ async def get_voice_file_path_url(voice_message: Voice):
         # Get the file path URL of the voice message
         voice_file = await voice_message.get_file()
         voice_file_path_url = voice_file.file_path
-        print("voice file path url: ", voice_file_path_url)
+        # print("voice file path url: ", voice_file_path_url)
         
         return voice_file_path_url
     # except Exception as e:
@@ -4528,116 +4583,6 @@ async def send_user_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("send user answers function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-# import os
-# import aiohttp
-# from moviepy.editor import AudioFileClip, concatenate_audioclips
-
-# async def generate_conversation_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     # Combine Part 1 conversation
-#     part1_conversation = []
-#     for i in range(len(mock_part1_questions)):
-#         question_audio_path = await convert_text_to_audio(mock_part1_questions[i])
-#         part1_conversation.append(question_audio_path)
-#         part1_conversation.append(mock_part1_voice_urls[i])
-
-#     # Combine Part 2 conversation
-#     part2_conversation = []
-#     question_audio_path = await convert_text_to_audio(mock_part2_questions[0])
-#     part2_conversation.append(question_audio_path)
-#     part2_conversation.append(mock_part2_voice_urls[0])
-
-#     # Combine Part 3 conversation
-#     part3_conversation = []
-#     for i in range(len(mock_part3_questions)):
-#         question_audio_path = await convert_text_to_audio(mock_part3_questions[i])
-#         part3_conversation.append(question_audio_path)
-#         part3_conversation.append(mock_part3_voice_urls[i])
-
-#     # Combine all parts into a single conversation
-#     conversation = part1_conversation + part2_conversation + part3_conversation
-
-#     # Concatenate the audio files using pydub
-#     combined_audio = AudioSegment.empty()
-#     for audio_path in conversation:
-#         audio_segment = AudioSegment.from_file(audio_path)
-#         combined_audio += audio_segment
-
-#     # Save the combined audio to a file
-#     combined_audio_path = "mock_test_conversation.mp3"
-#     combined_audio.export(combined_audio_path, format="mp3")
-
-#     # Send the combined audio file to the user
-#     with open(combined_audio_path, 'rb') as audio_file:
-#         await context.bot.send_audio(chat_id=update.effective_chat.id, audio=audio_file)
-# async def download_audio(url, output_path):
-#     async with aiohttp.ClientSession() as session:
-#         async with session.get(url) as response:
-#             with open(output_path, 'wb') as f:
-#                 while True:
-#                     chunk = await response.content.read(1024)
-#                     if not chunk:
-#                         break
-#                     f.write(chunk)
-
-# async def generate_conversation_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     # Combine Part 1 conversation
-#     part1_conversation = []
-#     for i in range(len(mock_part1_questions)):
-#         question_audio_path = await convert_text_to_audio(mock_part1_questions[i])
-#         part1_conversation.append(question_audio_path)
-        
-#         answer_audio_path = f"part1_answer_{i}.oga"
-#         await download_audio(mock_part1_voice_urls[i], answer_audio_path)
-#         part1_conversation.append(answer_audio_path)
-
-#     # Combine Part 2 conversation
-#     part2_conversation = []
-#     if mock_part2_questions and mock_part2_voice_urls:
-#         question_audio_path = await convert_text_to_audio(mock_part2_questions[0])
-#         part2_conversation.append(question_audio_path)
-        
-#         answer_audio_path = "part2_answer.oga"
-#         await download_audio(mock_part2_voice_urls[0], answer_audio_path)
-#         part2_conversation.append(answer_audio_path)
-
-#     # Combine Part 3 conversation
-#     part3_conversation = []
-#     for i in range(len(mock_part3_questions)):
-#         question_audio_path = await convert_text_to_audio(mock_part3_questions[i])
-#         part3_conversation.append(question_audio_path)
-        
-#         answer_audio_path = f"part3_answer_{i}.oga"
-#         await download_audio(mock_part3_voice_urls[i], answer_audio_path)
-#         part3_conversation.append(answer_audio_path)
-
-#     # Combine all parts into a single conversation
-#     conversation = part1_conversation + part2_conversation + part3_conversation
-
-#     try:
-#         # Concatenate the audio files using moviepy
-#         audio_clips = [AudioFileClip(audio_path) for audio_path in conversation]
-#         combined_audio = concatenate_audioclips(audio_clips)
-        
-#         # Change the output format to WAV or OGA
-#         output_path = "mock_test_conversation.wav"  # For WAV format
-#         # output_path = "mock_test_conversation.oga"  # For OGA format
-        
-#         combined_audio.write_audiofile(output_path, verbose=False, logger=None)
-
-#         # Send the combined audio file to the user
-#         with open(output_path, 'rb') as audio_file:
-#             await context.bot.send_audio(chat_id=update.effective_chat.id, audio=audio_file)
-
-#     except Exception as e:
-#         print(f"Error in generate_conversation_audio: {str(e)}")
-
-#     finally:
-#         # Clean up the downloaded audio files and temporary files
-#         for audio_path in conversation:
-#             if os.path.exists(audio_path):
-#                 os.remove(audio_path)
-#         if os.path.exists(output_path):
-#             os.remove(output_path)
 
 async def mock_test_completed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -4875,34 +4820,52 @@ async def assess_part1_mock_async(audio_urls, question_prompts, task_type):
         response_json = scores  # Assuming assess_speech returns the JSON response directly
         mock_part1_analysis_list.append(analysis_data)
         # print(analysis_data)
-        if 'result' in response_json:
-            result = response_json['result']
-            scores = {
-                "overall": result.get("overall", "N/A"),
-                "pronunciation": result.get("pronunciation", "N/A"),
-                "fluency": result.get("fluency_coherence", "N/A"),
-                "grammar": result.get("grammar", "N/A"),
-                "vocabulary": result.get("lexical_resource", "N/A"),
-                "relevance": result.get("relevance", "N/A"),
-                "transcription": result.get("transcription", "N/A"),
-                "pause_filler": result.get("pause_filler", {}),
-                "sentences": [
-                    {
-                        "sentence": sentence.get("sentence", ""),
-                        "pronunciation": sentence.get("pronunciation", "N/A"),
-                        "grammar": sentence.get("grammar", {}).get("corrected", "")
-                    }
-                    for sentence in result.get("sentences", [])
-                ]
-            }
-            # analysis_list.append(scores)
+        # if 'result' in response_json:
+        #     result = response_json['result']
+        #     scores = {
+        #         "overall": result.get("overall", "N/A"),
+        #         "pronunciation": result.get("pronunciation", "N/A"),
+        #         "fluency": result.get("fluency_coherence", "N/A"),
+        #         "grammar": result.get("grammar", "N/A"),
+        #         "vocabulary": result.get("lexical_resource", "N/A"),
+        #         "relevance": result.get("relevance", "N/A"),
+        #         "transcription": result.get("transcription", "N/A"),
+        #         "pause_filler": result.get("pause_filler", {}),
+        #         "sentences": [
+        #             {
+        #                 "sentence": sentence.get("sentence", ""),
+        #                 "pronunciation": sentence.get("pronunciation", "N/A"),
+        #                 "grammar": sentence.get("grammar", {}).get("corrected", "")
+        #             }
+        #             for sentence in result.get("sentences", [])
+        #         ]
+        #     }
+        #     # analysis_list.append(scores)
         
-        # end_time = time.time()
-        # execution_time = end_time - start_time
-        # print(f"Execution time: {execution_time} seconds")
+        # # end_time = time.time()
+        # # execution_time = end_time - start_time
+        # # print(f"Execution time: {execution_time} seconds")
+        # os.remove(filename)
+        # # print(scores)
+        # return scores
+        processed_scores = {
+            "overall": scores['ielts_score']['overall'],
+            "pronunciation": scores['ielts_score']['pronunciation'],
+            "fluency": scores['ielts_score']['fluency'],
+            "grammar": scores['ielts_score']['grammar'],
+            "vocabulary": scores['ielts_score']['vocabulary'],
+            "relevance": scores['relevance']['class'],
+            "transcription": scores['transcription'],
+            # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
+        }
+
+        # Add word-level details to the processed_scores
+        # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
+
+        # Clean up the temporary file
         os.remove(filename)
-        # print(scores)
-        return scores
+        # print(processed_scores)
+        return processed_scores
     except Exception as e:
         print(f"Error assessing speech: {str(e)}")
         return None
@@ -4924,34 +4887,52 @@ async def assess_part2_mock_async(audio_url, question_prompt, task_type):
         response_json = scores  # Assuming assess_speech returns the JSON response directly
         mock_part2_analysis_list.append(analysis_data)
         # print(analysis_data)
-        if 'result' in response_json:
-            result = response_json['result']
-            scores = {
-                "overall": result.get("overall", "N/A"),
-                "pronunciation": result.get("pronunciation", "N/A"),
-                "fluency": result.get("fluency_coherence", "N/A"),
-                "grammar": result.get("grammar", "N/A"),
-                "vocabulary": result.get("lexical_resource", "N/A"),
-                "relevance": result.get("relevance", "N/A"),
-                "transcription": result.get("transcription", "N/A"),
-                "pause_filler": result.get("pause_filler", {}),
-                "sentences": [
-                    {
-                        "sentence": sentence.get("sentence", ""),
-                        "pronunciation": sentence.get("pronunciation", "N/A"),
-                        "grammar": sentence.get("grammar", {}).get("corrected", "")
-                    }
-                    for sentence in result.get("sentences", [])
-                ]
-            }
-            # analysis_list.append(scores)
+        # if 'result' in response_json:
+        #     result = response_json['result']
+        #     scores = {
+        #         "overall": result.get("overall", "N/A"),
+        #         "pronunciation": result.get("pronunciation", "N/A"),
+        #         "fluency": result.get("fluency_coherence", "N/A"),
+        #         "grammar": result.get("grammar", "N/A"),
+        #         "vocabulary": result.get("lexical_resource", "N/A"),
+        #         "relevance": result.get("relevance", "N/A"),
+        #         "transcription": result.get("transcription", "N/A"),
+        #         "pause_filler": result.get("pause_filler", {}),
+        #         "sentences": [
+        #             {
+        #                 "sentence": sentence.get("sentence", ""),
+        #                 "pronunciation": sentence.get("pronunciation", "N/A"),
+        #                 "grammar": sentence.get("grammar", {}).get("corrected", "")
+        #             }
+        #             for sentence in result.get("sentences", [])
+        #         ]
+        #     }
+        #     # analysis_list.append(scores)
         
-        # end_time = time.time()
-        # execution_time = end_time - start_time
-        # print(f"Execution time: {execution_time} seconds")
+        # # end_time = time.time()
+        # # execution_time = end_time - start_time
+        # # print(f"Execution time: {execution_time} seconds")
+        # os.remove(filename)
+        # # print(scores)
+        # return scores
+        processed_scores = {
+            "overall": scores['ielts_score']['overall'],
+            "pronunciation": scores['ielts_score']['pronunciation'],
+            "fluency": scores['ielts_score']['fluency'],
+            "grammar": scores['ielts_score']['grammar'],
+            "vocabulary": scores['ielts_score']['vocabulary'],
+            "relevance": scores['relevance']['class'],
+            "transcription": scores['transcription'],
+            # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
+        }
+
+        # Add word-level details to the processed_scores
+        # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
+
+        # Clean up the temporary file
         os.remove(filename)
-        # print(scores)
-        return scores
+        # print(processed_scores)
+        return processed_scores
     except Exception as e:
         print(f"Error assessing speech: {str(e)}")
         return None
@@ -4973,34 +4954,52 @@ async def assess_part3_mock_async(audio_urls, question_prompts, task_type):
         response_json = scores  # Assuming assess_speech returns the JSON response directly
         mock_part3_analysis_list.append(analysis_data)
         # print(analysis_data)
-        if 'result' in response_json:
-            result = response_json['result']
-            scores = {
-                "overall": result.get("overall", "N/A"),
-                "pronunciation": result.get("pronunciation", "N/A"),
-                "fluency": result.get("fluency_coherence", "N/A"),
-                "grammar": result.get("grammar", "N/A"),
-                "vocabulary": result.get("lexical_resource", "N/A"),
-                "relevance": result.get("relevance", "N/A"),
-                "transcription": result.get("transcription", "N/A"),
-                "pause_filler": result.get("pause_filler", {}),
-                "sentences": [
-                    {
-                        "sentence": sentence.get("sentence", ""),
-                        "pronunciation": sentence.get("pronunciation", "N/A"),
-                        "grammar": sentence.get("grammar", {}).get("corrected", "")
-                    }
-                    for sentence in result.get("sentences", [])
-                ]
-            }
-            # analysis_list.append(scores)
+        # if 'result' in response_json:
+        #     result = response_json['result']
+        #     scores = {
+        #         "overall": result.get("overall", "N/A"),
+        #         "pronunciation": result.get("pronunciation", "N/A"),
+        #         "fluency": result.get("fluency_coherence", "N/A"),
+        #         "grammar": result.get("grammar", "N/A"),
+        #         "vocabulary": result.get("lexical_resource", "N/A"),
+        #         "relevance": result.get("relevance", "N/A"),
+        #         "transcription": result.get("transcription", "N/A"),
+        #         "pause_filler": result.get("pause_filler", {}),
+        #         "sentences": [
+        #             {
+        #                 "sentence": sentence.get("sentence", ""),
+        #                 "pronunciation": sentence.get("pronunciation", "N/A"),
+        #                 "grammar": sentence.get("grammar", {}).get("corrected", "")
+        #             }
+        #             for sentence in result.get("sentences", [])
+        #         ]
+        #     }
+        #     # analysis_list.append(scores)
         
-        # end_time = time.time()
-        # execution_time = end_time - start_time
-        # print(f"Execution time: {execution_time} seconds")
+        # # end_time = time.time()
+        # # execution_time = end_time - start_time
+        # # print(f"Execution time: {execution_time} seconds")
+        # os.remove(filename)
+        # # print(scores)
+        # return scores
+        processed_scores = {
+            "overall": scores['ielts_score']['overall'],
+            "pronunciation": scores['ielts_score']['pronunciation'],
+            "fluency": scores['ielts_score']['fluency'],
+            "grammar": scores['ielts_score']['grammar'],
+            "vocabulary": scores['ielts_score']['vocabulary'],
+            "relevance": scores['relevance']['class'],
+            "transcription": scores['transcription'],
+            # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
+        }
+
+        # Add word-level details to the processed_scores
+        # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
+
+        # Clean up the temporary file
         os.remove(filename)
-        # print(scores)
-        return scores
+        # print(processed_scores)
+        return processed_scores
     except Exception as e:
         print(f"Error assessing speech: {str(e)}")
         return None
@@ -5416,7 +5415,7 @@ async def generate_mock_test_detailed_feedback(update: Update, context: ContextT
         detailed_feedback = part1_detailed_feedback + part2_detailed_feedback + part3_detailed_feedback
         
         # Notify the user that detailed feedback has been generated for all parts
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Detailed feedback for all parts has been generated.")
+        # await context.bot.send_message(chat_id=update.effective_chat.id, text="Detailed feedback for all parts has been generated.")
 
         # Provide user options after detailed results
         keyboard = [
