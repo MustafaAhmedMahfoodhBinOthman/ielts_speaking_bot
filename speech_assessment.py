@@ -163,7 +163,7 @@ def assess_speech(audio_path, question_prompt):
         scores = {
         "ielts_score": {
             "overall": result.get("speech_score", {}).get("fluency", {}).get("overall_metrics", {}).get("ielts_estimate", 0),
-            "pronunciation": result.get("speech_score", {}).get("quality_score",0) /10,
+            "pronunciation": (result.get("speech_score", {}).get("quality_score",0) - 15 ) /10,
             "fluency": result.get("speech_score", {}).get("fluency", {}).get("overall_metrics", {}).get("fluency_score", 0)/10,
             "grammar": result.get("speech_score", {}).get("fluency", {}).get("overall_metrics", {}).get("ielts_subscore", {}).get("grammar", 0),
             "coherence": result.get("speech_score", {}).get("fluency", {}).get("overall_metrics", {}).get("ielts_subscore", {}).get("coherence", 0),
