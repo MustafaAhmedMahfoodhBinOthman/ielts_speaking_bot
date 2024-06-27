@@ -668,7 +668,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await query.edit_message_reply_markup(reply_markup=None)
             except Exception as e:
-                print("error: await query.edit_message_reply_markup(reply_markup=None)")
+                # print("error: await query.edit_message_reply_markup(reply_markup=None)")
                 pass
             await check_channel(update,context)
             await ask_test_part(update, context)  # Proceed to test part selection
@@ -679,7 +679,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await query.edit_message_reply_markup(reply_markup=None)
             except Exception as e:
-                print("error: await query.edit_message_reply_markup(reply_markup=None)")
+                # print("error: await query.edit_message_reply_markup(reply_markup=None)")
                 pass
             await show_main_menu(update, context,"Main menu")  # Proceed to test part selection
         elif text == "Bot Channel":
