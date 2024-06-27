@@ -6,14 +6,15 @@ import random
 from supabase import create_client, Client
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
-from telegram.error import BadRequest
+from telegram.error import BadRequest, NetworkError, TimedOut
 from datetime import datetime, timedelta
+from telegram.request import HTTPXRequest
 from groq import Groq
 from deepgram import DeepgramClient, PrerecordedOptions, SpeakOptions
 from PIL import Image, ImageDraw, ImageFont
 import logging
 import asyncio
-from speech_assessment import assess_speech
+from speech_assessment import assess_speech,assess_speech2
 
 from topic_vocabularies import topic_vocabularies
 import matplotlib.pyplot as plt
@@ -33,6 +34,7 @@ import pandas as pd
 from openai import OpenAI
 from dotenv import load_dotenv
 load_dotenv()
+
 # from pydub import AudioSegment
 # Configure logging
 # logging.basicConfig(level=logging.INFO)
@@ -42,39 +44,26 @@ load_dotenv()
 #--------------------------APIs----------------------------------------
 
 url: str = "https://wqlryzngdnfrarolbmma.supabase.co"
-# key: str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndxbHJ5em5nZG5mcmFyb2xibW1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTc1MDk4NTksImV4cCI6MjAzMzA4NTg1OX0.zHkAeB9XxyC30WtQJSQnEyvNKCDneZ05EIQ6lfIHqQw"
 key: str=  os.getenv("supabase")
 supabase: Client = create_client(url, key)
 
 # Telegram bot token
-# BOT_TOKEN = "7228259994:AAGRgoOn9a-FPWHlFZf-oFhuGvU72nXc5n4"
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-# perplexity_API = "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"
 perplexity_API = os.getenv("perplexity_API")
 # Groq API client
-# groq_API1 = "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"
 groq_API1 = os.getenv("groq_API1")
 groq_client = Groq(api_key=groq_API1)
 
 # Deepgram API client
-# deepgram_API = "e2626090e76f953c1e01f3fd069a630d4d5daf5b"
 deepgram_API = os.getenv("deepgram_API")
-# deepgram_API2 = "0502778c404dbb949dc96d4bd878514d2baea720"
 deepgram_API2 = os.getenv("deepgram_API2")
 deepgram_api_keys = [deepgram_API, deepgram_API2]
 #UnrealSpeech TTS API
-# unreal_speech_API1 = 'Bearer Ocz2ouV94whfqIwKDCm2KK4buWVVsywymT5IhcLeoMjQXEFPVSYx4e'
 unreal_speech_API1 = os.getenv("unreal_speech_API1")
-# unreal_speech_API2 = 'Bearer Qgan9Osp8iTlyBBHrcoU2X1NMdHSoUwdzZ1bdqGYGobSc4rswPig45'
 unreal_speech_API2 = os.getenv("unreal_speech_API2")
 unreal_speech_API_keys=  [unreal_speech_API1, unreal_speech_API2]
 
-#Gemini_API_Key
-# Gemini_API_Key = 'AIzaSyAtnlV6rfm_OsSt9M_w9ZaiFn3NjdjSVuw' #mustafabinothman22
-# Gemini_API_Key2 = 'AIzaSyDbU_8cAQCAhr59bqtGf40FV-92KCKkLWs' #mustafanotion
-# Gemini_API_Key3 = 'AIzaSyBOb6xrGvLxRBvgMEUyWvTSGKZVDGT4j3w' #mustafabinothman2003
-# Gemini_API_Key4 = 'AIzaSyB5Cy4KIg4xKwz2poq3sywJEvqI0BL10iQ' #mustafabinothman2023
-# Gemini_API_Key5 = 'AIzaSyBUpws7IJIKo9rZI1YKSBPQj_RpPWwTqFo' #www.binothman24
+
 Gemini_API_Key = os.getenv("Gemini_API_Key")
 Gemini_API_Key2 = os.getenv("Gemini_API_Key2")
 Gemini_API_Key3 = os.getenv("Gemini_API_Key3")
@@ -154,7 +143,12 @@ mock_part3_detailed_feedback_list = []
 examiner_voice = ""
 targeted_score = 0.0
 userID = ''
-
+groq_model = "llama3-70b-8192"
+remaining_attempts = 0
+test_stop = False
+part_1_minute = False
+part_3_minute = False
+in_channel= False
 # Define a dictionary to map voice names to their URLs
 # voice_samples = {
 #     "Dan": "https://unreal-expire-in-90-days.s3-us-west-2.amazonaws.com/149950b4-5ebc-4c60-a448-35582cc402be-0.mp3",
@@ -174,12 +168,15 @@ voice_samples = {
 }
 # List to store Part 2 answers
 # Handler for the /start command
+#----------------------------- General Code -------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global part_1_minute, part_3_minute,test_stop
     print("----------------start----------------------")
     user_id = update.effective_user.id
     username = update.effective_user.username
     userID = user_id
     print("UserID: ", userID)
+    print("username: ", username)
     #--------------PART1-----------------
     questions_list.clear()
     answers_list.clear()
@@ -223,8 +220,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mock_part2_detailed_feedback_list.clear()
     mock_part3_detailed_feedback_list.clear()
     context.user_data.clear()
+    
+    part_1_minute=False
+    part_3_minute=False
+    test_stop=False
     # Reset the current question index
     context.user_data[f'{userID}current_question_index'] = 0
+    
     try:
         user = supabase.table('ielts_speaking_users').select('*').eq('user_id', user_id).execute()
         if len(user.data) == 0:
@@ -242,7 +244,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 'last_attempt_time': datetime.now().strftime("%Y-%m-%d %H:%M"),
                 'attempts_remaining': 5,
                 'practice_count': 0,
-                # 'in_channel': False
+                'in_channel': False
             }
             supabase.table('ielts_speaking_users').insert(data).execute()
 
@@ -300,7 +302,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("Start function",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-    
 # Helper function to ask for language
 async def ask_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("ask language")
@@ -319,27 +320,36 @@ async def ask_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("ask language function",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
 async def check_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    channel_id = "@IELTS_SpeakingBOT"
-    user_id = update.effective_user.id
-    chat_member = await context.bot.get_chat_member(chat_id=channel_id,user_id= user_id)
-    if chat_member.status in ["member", "creator", "administrator"]:
-        print(f"Yes {user_id} is a member")
-        return True
-    else:
-        print(f"No, user {user_id} is not a member of the channel.")
-        print(f"User's status: {chat_member.status}")
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="Please join our channel (https://t.me/IELTS_SpeakingBOT) to use this bot.")
-        return False
-        
+    global  in_channel
+    try:
+        channel_id = "@IELTS_SpeakingBOT"
+        user_id = update.effective_user.id
+        chat_member = await context.bot.get_chat_member(chat_id=channel_id,user_id= user_id)
+        if chat_member.status in ["member", "creator", "administrator"]:
+            print(f"Yes {user_id} is a member")
+            supabase.table('ielts_speaking_users').update({
+                    # 'practice_count': new_count,
+                    # 'attempts_remaining': new_attempts_remaining,
+                    'in_channel': True
+                }).eq('user_id', user_id).execute()
+            in_channel=True
+            return True
+        else:
+                
+            supabase.table('ielts_speaking_users').update({'in_channel':False}).eq('user_id',user_id).execute() 
+    except Exception as e:
+        print("check channel ",e)
+        pass
+             
+             
+             
 async def error_handling(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # await update.message.reply_text(issue_message)
-    issue_message = "Sorry for the inconvenience, it seems there is an issue with the bot. If that happens, please contact me @ielts_pathway."
+    issue_message = "🚨 Sorry for the inconvenience, it seems there is an issue with the bot. If that happens, please contact me @ielts_pathway."
     text = issue_message
-    await show_main_menu(update, context, text)
-    
+    await show_main_menu(update, context, text)  
 async def ask_english_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("ask english level")
     try:
@@ -406,12 +416,14 @@ async def ask_preferred_voice(update: Update, context: ContextTypes.DEFAULT_TYPE
 # Handler for user messages
 # Handler for user messages
 async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global remaining_attempts, test_stop,part_1_minute,part_3_minute
+    
     print("message handler")
     try:
         user_id = update.effective_user.id
         text = update.message.text
         print(f"Received message: {text}")
-
+        query = update.callback_query
         user = supabase.table('ielts_speaking_users').select('*').eq('user_id', user_id).execute()
 
         if 'email_prompt' in context.user_data:
@@ -512,8 +524,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # await update.message.reply_text("Please enter a valid topic number.")
         elif text == "Part 1":
             
-            has_attempts = await check_user_attempts(update, context)
-            if has_attempts:
+            # has_attempts = await check_user_attempts(update, context)
+            
+            await check_user_attempts(update, context)
+            # if has_attempts:
+            if remaining_attempts > 0:
                 print("Part 1 selected")
                 #--------------PART1-----------------
                 questions_list.clear()
@@ -525,7 +540,9 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 list_previous_quetions.clear()
                 list_previous_answers.clear()
                 context.user_data.clear()
-                print(examiner_voice)
+                part_1_minute=False
+                part_3_minute=False
+                # print(examiner_voice)
                 await stop_test(update,context, "IELTS Speaking test Part 1 ")
                 await ask_part_1_topic(update, context)
             else:
@@ -535,8 +552,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "Part 2":
             
             print("Part 2 selected")
-            has_attempts = await check_user_attempts(update, context)
-            if has_attempts:
+            # has_attempts = await check_user_attempts(update, context)
+            
+            await check_user_attempts(update, context)
+            # if has_attempts:
+            if remaining_attempts > 0:
                 #--------------PART2-----------------
                 part2_voice_urls.clear()  # List to store Part 2 voice URLs
                 part2_questions.clear()  # List to store Part 2 questions
@@ -544,6 +564,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 analysis2_list.clear()
                 detailed_feedback2_list.clear()
                 context.user_data.clear()
+                part_1_minute=False
+                part_3_minute=False
                 await stop_test(update,context, "IELTS Speaking test Part 2 ")
                 await update.effective_message.reply_text( 
                                                         #   "IELTS Speaking Part 2:\n\n"
@@ -556,8 +578,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await show_main_menu(update, context,text)
         elif text == "Part 3":
             print("Part 3 selected")
-            has_attempts = await check_user_attempts(update, context)
-            if has_attempts:
+            # has_attempts = await check_user_attempts(update, context)
+            
+            await check_user_attempts(update, context)
+            # if has_attempts:
+            if remaining_attempts > 0:
                 #--------------PART3-----------------
                 part3_voice_urls.clear()  # List to store Part 3 voice URLs
                 part3_questions.clear()  # List to store Part 3 questions
@@ -565,6 +590,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 analysis3_list.clear()
                 detailed_feedback3_list.clear()
                 context.user_data.clear()
+                part_1_minute=False
+                part_3_minute=False
                 await stop_test(update,context, "IELTS Speaking test Part 3")
                 keyboard = [
                     [InlineKeyboardButton("Take Part 2 first", callback_data='take_part2_first')],
@@ -579,8 +606,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif text == "Mock Test":
             # Mock test lists
             print("mock test selected")
-            has_attempts = await check_user_attempts(update, context)
-            if has_attempts:
+            # has_attempts = await check_user_attempts(update, context)
+            
+            await check_user_attempts(update, context)
+            # if has_attempts:
+            if remaining_attempts > 0:
                  #--------------PART1-----------------
                 questions_list.clear()
                 answers_list.clear()
@@ -602,7 +632,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 part3_answers.clear()
                 analysis3_list.clear()
                 detailed_feedback3_list.clear()
-                
+                part_1_minute=False
+                part_3_minute=False
                 #------------------Mock test---------------------------
                 mock_part1_questions.clear()
                 mock_part1_answers.clear()
@@ -632,18 +663,42 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await show_main_menu(update, context,text)
         elif text == "Start Test":
             print("Start Test selected")
+            part_1_minute=False
+            part_3_minute=False
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception as e:
+                print("error: await query.edit_message_reply_markup(reply_markup=None)")
+                pass
+            await check_channel(update,context)
             await ask_test_part(update, context)  # Proceed to test part selection
         elif text == "Main menu":
             print("Main menu selected")
-            
+            part_1_minute=False
+            part_3_minute=False
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception as e:
+                print("error: await query.edit_message_reply_markup(reply_markup=None)")
+                pass
             await show_main_menu(update, context,"Main menu")  # Proceed to test part selection
         elif text == "Bot Channel":
             print("Main menu selected")
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception as e:
+                print("error: await query.edit_message_reply_markup(reply_markup=None)")
+                pass
             text="I have created a channel to share updates about the bot and provide the best resources for IELTS. Please join us at @IELTS_SpeakingBOT."
             await show_main_menu(update, context,text)  # Proceed to test part selection
         elif text == "Show Progress":
             print("Show Progress selected")
             # TODO: Implement logic to show user progress
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception as e:
+                print("error: await query.edit_message_reply_markup(reply_markup=None)")
+                pass
             await update.message.reply_text("Youur progress in IELTS Speaking ")
             await show_progress(update, context)
         elif text == "Stop the Test":
@@ -653,21 +708,39 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(e)  
             await update.message.reply_text("The test will stop now....")
+            test_stop = True
+            
             await start(update, context)
         elif text == "Contact Me":
             print("Contact Me selected")
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception as e:
+                print("error: await query.edit_message_reply_markup(reply_markup=None)")
+                pass
             # TODO: Implement logic for contacting you (e.g., provide contact info)
             await update.message.reply_text("You can contact me at @ielts_pathway.")
         elif text=="Change language":
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception as e:
+                print("error: await query.edit_message_reply_markup(reply_markup=None)")
+                pass
             await change_language(update, context)
         elif text=="Change voice":
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception as e:
+                print("error: await query.edit_message_reply_markup(reply_markup=None)")
+                pass
             await change_voice(update, context)
     except Exception as e:
         print("message handler function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
 # Handler for voice messages
-async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE): 
+    global part_1_minute, part_3_minute
     print("voice handler")
     try:
         user_id = update.effective_user.id
@@ -678,7 +751,7 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if voice_duration < 60:
                 await update.message.reply_text("Your answer is less than 1 minute. Please re-record your answer and make it longer.")
             elif voice_duration > 121:
-                await update.message.reply_text("Your answer is too long more than 2 minutes . Please try to shorten your answer and re-record it.")
+                await update.message.reply_text("Your answer is more than 2 minutes . Please try to shorten your answer and re-record it.")
             else:
                 # Convert the user's voice recording to text using Deepgram STT API
                 transcribed_text = await convert_audio_to_text(update.message.voice.file_id, update, context)
@@ -704,7 +777,9 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     
                     # Get the duration of the voice message
                     voice_duration = update.message.voice.duration
-                    
+                    if voice_duration > 58:
+                        part_1_minute = True
+                        print("user exceeds 1 minute: ",part_1_minute)
                     if voice_duration > 80:  # 1 minute and 30 seconds
                         await update.message.reply_text("Your answer is too long. Please record another answer shorter than 1 minute.")
                     else:
@@ -725,25 +800,31 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text("Please send a voice message as your answer.")
             else:
                 print("No current question in context")
-                await update.message.reply_text("Unexpected error. Please try again.")
+                await error_handling(update, context)
         elif f'{userID}current_part3_question' in context.user_data:
             question = context.user_data[f'{userID}current_part3_question']
             voice_file_id = update.message.voice.file_id
             voice_file = await context.bot.get_file(voice_file_id)
             voice_url = voice_file.file_path
+            voice_duration = update.message.voice.duration
+            if voice_duration > 58:
+                part_3_minute = True
+                print("user exceeds 1 minute  : ",part_3_minute)
+            if voice_duration > 90:  # 1 minute and 30 seconds
+                        await update.message.reply_text("Your answer is too long. Please record another answer shorter than 90 seconds.")
+            else: 
+                transcribed_text = await convert_audio_to_text(voice_file_id, update, context)
 
-            transcribed_text = await convert_audio_to_text(voice_file_id, update, context)
-
-            if transcribed_text:
-                context.user_data[f'{userID}current_part3_answer'] = transcribed_text
-                context.user_data[f'{userID}current_part3_voice_url'] = update.message.voice.file_id
-                await update.message.reply_text(f"Your answer: \n{transcribed_text}\nAre you sure about your answer?", reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Yes, I am sure", callback_data='part3_confirm_answer')],
-                    [InlineKeyboardButton("Try again", callback_data='part3_retry_answer')],
-                    # [InlineKeyboardButton("Suggest an answer", callback_data='part3_suggest_answer')]
-                ]))
-            else:
-                await update.message.reply_text("Sorry, I couldn't get your answer. Please try again.")
+                if transcribed_text:
+                    context.user_data[f'{userID}current_part3_answer'] = transcribed_text
+                    context.user_data[f'{userID}current_part3_voice_url'] = update.message.voice.file_id
+                    await update.message.reply_text(f"Your answer: \n{transcribed_text}\nAre you sure about your answer?", reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("Yes, I am sure", callback_data='part3_confirm_answer')],
+                        [InlineKeyboardButton("Try again", callback_data='part3_retry_answer')],
+                        # [InlineKeyboardButton("Suggest an answer", callback_data='part3_suggest_answer')]
+                    ]))
+                else:
+                    await update.message.reply_text("Sorry, I couldn't get your answer. Please try again.")
         
         elif f'{userID}mock_part1_answering' in context.user_data:
             print("mock_part1_answering")
@@ -752,35 +833,41 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Get the user's voice answer
             user_answer_voice = update.message.voice
-
-            if user_answer_voice:
-                # Get the file path URL of the user's voice answer
-                voice_file_path_url = await get_voice_file_path_url(user_answer_voice)
-
-                # Transcribe the user's voice answer
-                user_answer_text = await convert_audio_to_text(user_answer_voice.file_id, update, context)
-                # print(user_answer_text)
-
-                if user_answer_text:
-                    # Store the user's answer text and voice file path URL in the respective lists
-                    mock_part1_answers.append(user_answer_text)
-                    # print("user_answer_text added to the list", user_answer_text)
-                    mock_part1_voice_urls.append(voice_file_path_url)
-                    # print("voice_file_path_url added to the list: ", voice_file_path_url)
-
-                    # Increment the current question index
-                    context.user_data[f'{userID}mock_part1_current_question_index'] = current_question_index + 1
-
-                    # Remove the 'mock_part1_answering' flag from context.user_data
-                    del context.user_data[f'{userID}mock_part1_answering']
-
-                    # Call the mock_part1_process function to ask the next question
-                    await mock_part1_process(update, context)
-                else:
-                    await update.message.reply_text("Sorry, I couldn't get your answer seems you have not answer the question. Please try again.")
+            voice_duration = update.message.voice.duration
+            if voice_duration > 58:
+                part_1_minute = True
+                print("user exceeds 1 minute (part 1 mock)", part_1_minute)
+            if voice_duration > 80:  # 1 minute and 30 seconds
+                        await update.message.reply_text("Your answer is too long. Please record another answer shorter than 1 minute.")
             else:
-                # Send a message to the user asking them to try again
-                await update.message.reply_text("Please provide a voice message with your answer.")
+                if user_answer_voice:
+                    # Get the file path URL of the user's voice answer
+                    voice_file_path_url = await get_voice_file_path_url(user_answer_voice)
+
+                    # Transcribe the user's voice answer
+                    user_answer_text = await convert_audio_to_text(user_answer_voice.file_id, update, context)
+                    # print(user_answer_text)
+
+                    if user_answer_text:
+                        # Store the user's answer text and voice file path URL in the respective lists
+                        mock_part1_answers.append(user_answer_text)
+                        # print("user_answer_text added to the list", user_answer_text)
+                        mock_part1_voice_urls.append(voice_file_path_url)
+                        # print("voice_file_path_url added to the list: ", voice_file_path_url)
+
+                        # Increment the current question index
+                        context.user_data[f'{userID}mock_part1_current_question_index'] = current_question_index + 1
+
+                        # Remove the 'mock_part1_answering' flag from context.user_data
+                        del context.user_data[f'{userID}mock_part1_answering']
+
+                        # Call the mock_part1_process function to ask the next question
+                        await mock_part1_process(update, context)
+                    else:
+                        await update.message.reply_text("Sorry, I couldn't get your answer seems you have not answer the question. Please try again.")
+                else:
+                    # Send a message to the user asking them to try again
+                    await update.message.reply_text("Please provide a voice message with your answer.")
         elif f'{userID}mock_part2_answering' in context.user_data:
         # Get the user's voice answer
             user_answer_voice = update.message.voice
@@ -819,34 +906,40 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif f'{userID}mock_part3_answering' in context.user_data:
             # Get the user's voice answer
             user_answer_voice = update.message.voice
+            voice_duration = update.message.voice.duration
+            if voice_duration > 58:
+                part_3_minute = True
+                print("user exceeds 1 minute (part 3 mock)", part_3_minute)
+            if voice_duration > 90:  # 1 minute and 30 seconds
+                        await update.message.reply_text("Your answer is too long. Please record another answer shorter than 90 seconds.")
+            else:     
+                if user_answer_voice:
+                    # Get the file path URL of the user's voice answer
+                    voice_file_path_url = await get_voice_file_path_url(user_answer_voice)
 
-            if user_answer_voice:
-                # Get the file path URL of the user's voice answer
-                voice_file_path_url = await get_voice_file_path_url(user_answer_voice)
+                    # Transcribe the user's voice answer
+                    user_answer_text = await convert_audio_to_text(user_answer_voice.file_id, update, context)
 
-                # Transcribe the user's voice answer
-                user_answer_text = await convert_audio_to_text(user_answer_voice.file_id, update, context)
+                    if user_answer_text:
+                        # Store the user's answer text and voice file path URL in the respective lists
+                        mock_part3_answers.append(user_answer_text)
+                        # print("user_answer_text added to the list", user_answer_text)
+                        mock_part3_voice_urls.append(voice_file_path_url)
+                        # print("voice_file_path_url added to the list: ", voice_file_path_url)
 
-                if user_answer_text:
-                    # Store the user's answer text and voice file path URL in the respective lists
-                    mock_part3_answers.append(user_answer_text)
-                    # print("user_answer_text added to the list", user_answer_text)
-                    mock_part3_voice_urls.append(voice_file_path_url)
-                    # print("voice_file_path_url added to the list: ", voice_file_path_url)
+                        # Increment the current question index
+                        context.user_data[f'{userID}mock_part3_current_question_index'] += 1
 
-                    # Increment the current question index
-                    context.user_data[f'{userID}mock_part3_current_question_index'] += 1
+                        # Remove the 'mock_part3_answering' flag from context.user_data
+                        del context.user_data[f'{userID}mock_part3_answering']
 
-                    # Remove the 'mock_part3_answering' flag from context.user_data
-                    del context.user_data[f'{userID}mock_part3_answering']
-
-                    # Call the mock_part3_process function to ask the next question or show next steps
-                    await mock_part3_process(update, context)
+                        # Call the mock_part3_process function to ask the next question or show next steps
+                        await mock_part3_process(update, context)
+                    else:
+                        await update.message.reply_text("Sorry, I couldn't get your answer. Please try again.")
                 else:
-                    await update.message.reply_text("Sorry, I couldn't get your answer. Please try again.")
-            else:
-                # Send a message to the user asking them to try again
-                await update.message.reply_text("Please provide a voice message with your answer.")
+                    # Send a message to the user asking them to try again
+                    await update.message.reply_text("Please provide a voice message with your answer.")
         else:
             print("Not answering a question")
             await update.message.reply_text("Please select a topic and start answering the questions.")
@@ -859,7 +952,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     print("button handler")
     try:
-        global answers_list, questions_list,voice_urls
+        global answers_list, questions_list,voice_urls,part_1_minute,part_3_minute,remaining_attempts
         query = update.callback_query
         try:
             await query.answer()
@@ -988,8 +1081,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=update.effective_chat.id, text="Please record your answer again.")
         elif query.data == 'retake_part_1':
             await query.edit_message_reply_markup(reply_markup=None)
-            has_attempts = await check_user_attempts(update, context)
-            if has_attempts:
+            # has_attempts = await check_user_attempts(update, context)
+            
+            await check_user_attempts(update, context)
+            # if has_attempts:
+            if remaining_attempts > 0:
                 print("Part 1 selected")
                 #--------------PART1-----------------
                 questions_list.clear()
@@ -1001,6 +1097,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 list_previous_quetions.clear()
                 list_previous_answers.clear()
                 context.user_data.clear()
+                part_1_minute=False
+                part_3_minute=False
                 print(examiner_voice)
                 await stop_test(update,context, "IELTS Speaking test Part 1 ")
                 await ask_part_1_topic(update, context)
@@ -1022,13 +1120,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif query.data == 'continue_part_2':
             #--------------PART2-----------------
             print("continue to part 2")
-            has_attempts = await check_user_attempts(update, context)
-            if has_attempts:
+            # has_attempts = await check_user_attempts(update, context)
+            
+            await check_user_attempts(update, context)
+            # if has_attempts:
+            if remaining_attempts > 0:
                 part2_voice_urls.clear()  # List to store Part 2 voice URLs
                 part2_questions.clear()  # List to store Part 2 questions
                 part2_answers.clear()
                 analysis2_list.clear()
                 context.user_data.clear()
+                part_1_minute=False
+                part_3_minute=False
                 # TODO: Implement logic to continue to Part 2
                 # await query.edit_message_reply_markup(reply_markup=None)
                 # await query.edit_message_text("Continuing to Part 2...")
@@ -1165,29 +1268,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.effective_message.reply_text("Please record your answer again.")
         elif query.data == 'continue_part3':
             print("continue to part 3")
-            has_attempts = await check_user_attempts(update, context)
-            if has_attempts:
+            # has_attempts = await check_user_attempts(update, context)
+            
+            await check_user_attempts(update, context)
+            # if has_attempts:
+            if remaining_attempts > 0:
                 part3_voice_urls.clear()  # List to store Part 3 voice URLs
                 # part3_questions.clear()  # List to store Part 3 questions
                 part3_answers.clear()
                 analysis3_list.clear()
                 detailed_feedback3_list.clear()
                 context.user_data.clear()
+                part_1_minute=False
+                part_3_minute=False
                 await query.edit_message_reply_markup(reply_markup=None)
                 await query.edit_message_text("Continuing to Part 3...")
-                print(part3_questions)
+                # print(part3_questions)
                 await start_part3_test(update, context)
             else:
                 text = "You have reached the maximum number of attempts (5 tests) for today. Please try again after 24 hours.\n for more inforamtion please contact me @ielts_pathway"
                 await show_main_menu(update, context,text)
         elif query.data == 'retake_part2':
             print("retake part 2")
-            has_attempts = await check_user_attempts(update, context)
-            if has_attempts:
+            # has_attempts = await check_user_attempts(update, context)
+            
+            await check_user_attempts(update, context)
+            # if has_attempts:
+            if remaining_attempts > 0:
                 part2_questions.clear()
                 part2_answers.clear()
                 part2_voice_urls.clear()
                 context.user_data.clear()
+                part_1_minute=False
+                part_3_minute=False
                 await query.edit_message_reply_markup(reply_markup=None)
                 await query.edit_message_text("retaking Part 2...")
                 await start_part2_test(update, context)
@@ -1351,7 +1464,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         elif query.data == 'take_part2_first':
             await query.edit_message_reply_markup(reply_markup=None)
-            
+            part_1_minute=False
+            part_3_minute=False
             print("take part 2 first")
             await start_part2_test(update, context)
         elif query.data == 'skip_part2':
@@ -1368,7 +1482,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             main_part2_question = part2_question.split('.')[0] + '.'
             # Clear the part3_questions list before adding new questions
             part3_questions.clear()
-
+            part_1_minute=False
+            part_3_minute=False
             # Add the Part 3 questions to the part3_questions list
             part3_questions.extend(part_3_questions)
 
@@ -1433,13 +1548,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif query.data == 'part3_retake':
             # part3_questions.clear()
             await query.edit_message_reply_markup(reply_markup=None)
-            has_attempts = await check_user_attempts(update, context)
+            # has_attempts = await check_user_attempts(update, context)
             keyboard = [
                     [InlineKeyboardButton("Take Part 2 first", callback_data='take_part2_first')],
                     [InlineKeyboardButton("Skip to Part 3", callback_data='skip_part2')]
                 ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            if has_attempts:
+            # has_attempts = await check_user_attempts(update, context)
+            
+            await check_user_attempts(update, context)
+            # if has_attempts:
+            if remaining_attempts > 0:
                 #--------------PART3-----------------
                 part3_voice_urls.clear()  # List to store Part 3 voice URLs
                 part3_questions.clear()  # List to store Part 3 questions
@@ -1447,6 +1566,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 analysis3_list.clear()
                 detailed_feedback3_list.clear()
                 context.user_data.clear()
+                part_1_minute=False
+                part_3_minute=False
                 await stop_test(update,context, "IELTS Speaking test Part 3")
                 
                 await update.message.reply_text("Do you want to take Part 2 first or skip to Part 3? (because IELTS Part 3 is related to Part 2)", reply_markup=reply_markup)
@@ -1553,8 +1674,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print("retake mock test")
             # print("mock test selected")
             await query.edit_message_reply_markup(reply_markup=None)
-            has_attempts = await check_user_attempts(update, context)
-            if has_attempts:
+            # has_attempts = await check_user_attempts(update, context)
+            
+            await check_user_attempts(update, context)
+            # if has_attempts:
+            if remaining_attempts > 0:
                  #--------------PART1-----------------
                 questions_list.clear()
                 answers_list.clear()
@@ -1598,6 +1722,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 mock_part2_detailed_feedback_list.clear()
                 mock_part3_detailed_feedback_list.clear()
                 context.user_data.clear()
+                part_1_minute=False
+                part_3_minute=False
                 await stop_test(update,context, "IELTS Speaking Mock test")
                 await start_mock_test(update, context)
             else:
@@ -1649,7 +1775,6 @@ async def change_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("change language",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
 async def change_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Allows the user to change their preferred voice."""
     try:
@@ -1712,20 +1837,6 @@ async def stop_test(update: Update, context: ContextTypes.DEFAULT_TYPE, part):
         print("Stop test ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-async def ask_test_part(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("ask test part")
-    try:
-        keyboard = [
-            [KeyboardButton("Part 1"), KeyboardButton("Part 2")],
-            [KeyboardButton("Part 3"), KeyboardButton("Mock Test")],
-            [KeyboardButton("Main menu")]
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-        await update.effective_message.reply_text("Which part of the IELTS Speaking test would you like to practice today?", reply_markup=reply_markup)
-    except Exception as e:
-        print("ask task part ",e)
-        # await update.message.reply_text(issue_message)
-        await error_handling(update, context)
 async def append_speaking_score(update: Update, context: ContextTypes.DEFAULT_TYPE ,part_type, band_score):
     try:
         user_id = update.effective_user.id
@@ -1761,8 +1872,6 @@ async def append_speaking_score(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         print(f"An error occurred in appending speaking score function : {e}")
         return False
-
-
 async def show_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_user.id
@@ -1788,7 +1897,6 @@ def get_user_scores(user_id):
     except Exception as e:
         print(f"Failed to retrieve data get user scores function: {e}")
         return pd.DataFrame()
-
 async def generate_charts(scores_df):
     
     charts = []
@@ -1833,7 +1941,6 @@ async def generate_charts(scores_df):
             plt.close(fig)  # Close the figure to avoid memory leaks
 
     return charts
-
 async def increment_practice_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_user.id
@@ -1869,13 +1976,12 @@ async def increment_practice_count(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         print("increment practice count function ",e)
         # await update.message.reply_text(issue_message)
-
 async def display_charts(update: Update, context: ContextTypes.DEFAULT_TYPE, charts: list):
     for chart in charts:
         chart.seek(0)  # Ensure the buffer is at the start
         await context.bot.send_photo(chat_id=update.effective_chat.id, photo=chart)
-
 async def check_user_attempts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global remaining_attempts
     try:
         user_id = update.effective_user.id
         # Retrieve the user's last_attempt_time and attempts_remaining from the database
@@ -1886,10 +1992,12 @@ async def check_user_attempts(update: Update, context: ContextTypes.DEFAULT_TYPE
             attempts_remaining = result.data[0]['attempts_remaining']
             current_time = datetime.now()
             print("Number of attempts left: ",attempts_remaining)
-            if attempts_remaining > 0:
-                return True
-            else:
-                 return False
+            remaining_attempts = attempts_remaining
+            print(remaining_attempts)
+            # if attempts_remaining > 0:
+            #     return True
+            # else:
+            #      return False
             # if last_attempt_time_str:
             #     last_attempt_time = datetime.strptime(last_attempt_time_str, "%Y-%m-%dT%H:%M:%S+00:00")
             #     if current_time - last_attempt_time < timedelta(hours=24):
@@ -1913,322 +2021,6 @@ async def check_user_attempts(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         print("check user attempts function ",e)
         # await update.message.reply_text(issue_message)
-# Helper function to ask for Part 1 topic
-# Helper function to ask for Part 1 topic
-async def ask_part_1_topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        print("ask part 1 topic")
-        global part_1_topics
-        part_1_topics = [
-        "Study 📚",
-        "Work 💼",
-        "Hometown 🏡",
-        "Home/ Accommodation 🏘️",
-        "Family 👨‍👩‍👧‍👦",
-        "Friends 👥",
-        "Clothes 👕",
-        "Fashion 👗",
-        "Gifts 🎁",
-        "Daily routine 📅",
-        "Daily activities 🏃‍♂️",
-        "Food/ Cooking 🍳",
-        "Drinks 🥤",
-        "Going out 🎉",
-        "Hobbies 🎨",
-        "Language 🌐",
-        "Leisure time activity ⏰",
-        "Sports ⚽",
-        "Future plan 🔮",
-        "Music 🎵",
-        "Newspapers 📰",
-        "Pets 🐾",
-        "Flowers & Plants 🌸",
-        "Reading 📖",
-        "Dancing 💃",
-        "Exercise 💪",
-        "Shopping 🛍️",
-        "Magazines & TV 📺",
-        "Travelling ✈️",
-        "Interesting places 🏰",
-        "Bicycle 🚲",
-        "Seasons 🍂",
-        "Maps 🗺️",
-        "Internet & Technology 💻",
-        "Weather ☀️",
-        "Festivals 🎆",
-        "Culture/ Tradition 🎭"
-    ]
-        
-        topics_message = "Please select the topic you want to practice \n(write the number of the topic):\n\n"
-        topics_message += "\n".join([f"{i+1}. {topic}" for i, topic in enumerate(part_1_topics)])
-        
-        
-        context.user_data['part_1_topic_selection'] = True
-        await update.effective_message.reply_text(topics_message, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("Random", callback_data="topic_random")]
-        ]))
-    except Exception as e:
-        print("ask part 1 topic function ",e)
-        # await update.message.reply_text(issue_message)
-        await error_handling(update, context)
-async def generate_and_ask_questions(update: Update, context: ContextTypes.DEFAULT_TYPE, topic):
-    try:
-        print("generate and ask questions")
-        # Use Groq API to generate questions
-        questions = await generate_questions(topic)
-        if not questions:
-            await update.effective_message.reply_text("Failed to generate questions. Please try again.")
-            return
-        v_topic = topic 
-        # Get the vocabulary list for the selected topic
-        vocabularies = topic_vocabularies.get(v_topic, [])
-        # print(topic[:-2])
-        # print("vocabularys:\n",vocabularies)
-        # Send the vocabulary list to the user
-        if vocabularies:
-            vocabulary_message = "Here are some vocabularies you can use in your speaking:\n" + ", ".join(vocabularies)
-            await update.effective_message.reply_text(vocabulary_message)
-        
-        context.user_data[f'{userID}questions'] = questions
-        context.user_data[f'{userID}answers'] = {}
-        context.user_data[f'{userID}current_question_index'] = 0
-        await update.effective_message.reply_text(f"IELTS Speaking Part 1:\n\nNow, we will begin Part 1 of the IELTS Speaking test. In this part, I will ask you ({len(questions_list)}) questions including general questions about yourselt your home or your job, etc.. as well as questions on the topic of {topic[:-2]} \n\nPlease answer each question in 15 to 40 seconds. \n\nLet's start") 
-        # time.sleep(1)
-        
-        await ask_current_question(update, context)
-    except Exception as e:
-        print("generate and ask questions function",e)
-        # await update.message.reply_text(issue_message)
-        await error_handling(update, context)
-# Helper function to ask the current question
-async def ask_current_question(update: Update, context: ContextTypes.DEFAULT_TYPE, retry=False):
-    try:
-        print("ask current question")
-        global questions_list, list_previous_quetions, list_previous_answers
-        
-        current_question_index = context.user_data.get(f'{userID}current_question_index', 0)
-        
-        if retry:
-            # await update.effective_message.reply_text("Please re-answer the question.")
-            
-            # Provide only the "Suggest Answer" option
-            keyboard = [
-                [InlineKeyboardButton("Suggest Answer", callback_data='suggest_answer')]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.effective_message.reply_text("Please re-answer the question.", reply_markup=reply_markup)
-        else:
-            if current_question_index < len(questions_list):
-                previous_question = questions_list[current_question_index - 1] if current_question_index > 0 else ""
-                current_question = questions_list[current_question_index].strip()
-                user_answer = answers_list[current_question_index - 1] if current_question_index > 0 else ""
-                selected_topic = context.user_data[f'{userID}selected_topic']
-                list_previous_quetions.append(previous_question) 
-                list_previous_answers.append(user_answer)
-                # Generate an interactive question based on the previous question, user's answer, and the current question
-                interactive_question = await generate_interactive_question(previous_question, user_answer, current_question, selected_topic,list_previous_quetions,list_previous_answers )
-                # print("current question: ",current_question, "\ninteractive question: ",interactive_question)
-                
-                if interactive_question:
-                    # Replace the original question in the questions_list with the generated interactive question
-                    questions_list[current_question_index] = interactive_question
-                    
-                    context.user_data[f'{userID}current_question'] = interactive_question
-                    
-                    # Convert question to audio using Deepgram TTS API
-                    try:
-                        # await update.effective_message.reply_text("  ")
-                        # print(len(list_previous_quetions), len(list_previous_answers))
-                        await update.effective_message.reply_text(interactive_question)
-                        audio_file_path = await convert_text_to_audio(interactive_question)
-                        
-                        with open(audio_file_path, 'rb') as audio:
-                            await update.effective_message.reply_voice(voice=audio)
-                        await update.effective_message.reply_text("Please record your answer.")
-                        context.user_data[f'{userID}answering_question'] = True
-                        print("Set answering_question to True")
-                    except Exception as e:
-                        print(f"Error converting text to audio: {e}")
-                        # Retry the conversion without sending an error message
-                        await update.effective_message.reply_text("Please record your answer.")
-                        context.user_data[f'{userID}answering_question'] = True
-                        print("Set answering_question to True")
-                else:
-                    current_question_index += 1
-                    context.user_data[f'{userID}current_question_index'] = current_question_index
-                    await ask_current_question(update, context)
-            else:
-                await show_results(update, context)
-    except Exception as e:
-        print("ask current question function ",e)
-        # await update.message.reply_text(issue_message)
-        await error_handling(update, context)
-# Helper function to move to the next question
-async def move_to_next_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        print("move to next question")
-        current_question_index = context.user_data.get(f'{userID}current_question_index', 0)
-        
-        if current_question_index < len(questions_list) - 1:
-            context.user_data[f'{userID}current_question_index'] = current_question_index + 1
-            await ask_current_question(update, context)
-        else:
-            await show_results(update, context)
-    except Exception as e:
-        print("move to next question function ",e)
-        # await update.message.reply_text(issue_message)
-        await error_handling(update, context)
-# Helper function to show results
-async def show_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        print("show results")
-        global questions_list, answers_list, voice_urls
-        # print(questions_list)
-        # print("------------------------------")
-        # print(answers_list)
-        # print("------------------------------")
-        # print(voice_urls)
-        # print("------------------------------")
-        # Format the questions and answers into a single message
-        result_message = "Here are your questions and answers:\n\n"
-        for i in range(len(questions_list)):
-            question = questions_list[i]
-            answer = answers_list[i] if i < len(answers_list) else "No answer provided"
-            result_message += f"Question: {question}\n\nAnswer: {answer}\n\n"
-        
-        # # Split the message into smaller chunks
-        # max_length = 4096  # Maximum message length allowed by Telegram
-        # message_chunks = [result_message[i:i+max_length] for i in range(0, len(result_message), max_length)]
-        
-        # # Send each chunk as a separate message
-        # for chunk in message_chunks:
-        #     await update.effective_message.reply_text(chunk)
-        await send_long_message(update, context, result_message)
-        # Prompt the user to continue to Part 2, retake Part 1, or end the test
-        await update.effective_message.reply_text("Please select one of these options.", reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("Continue to Part 2", callback_data='continue_part_2')],
-            [InlineKeyboardButton("Retake Part 1", callback_data='retake_part_1')],
-            [InlineKeyboardButton("Show Results", callback_data='show_results')],
-            [InlineKeyboardButton("End the Test", callback_data='end_test')]
-        ]))
-    except Exception as e:
-        print("show results function ",e)
-        # await update.message.reply_text(issue_message)
-        await error_handling(update, context)
-# Function to generate questions using Groq API
-async def generate_questions(topic):
-    global questions_list
-    try:
-        print("generate questions")
-        prompt = f"You are an IELTS Speaking examiner and now you are testing an IELTS candidate. This is Part 1 of the test, and you need to ask between 5 to 6 questions about this topic: {topic}. You should only ask questions and nothing else. First, ask 2 or 3 general questions about the candidate, followed by 4 or 5 questions on the given topic. Ensure your questions are exactly like those a real examiner would ask. Number each question."
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": ""},
-                {"role": "user", "content": prompt}
-            ],
-            model="llama3-70b-8192",
-        )
-        result = chat_completion.choices[0].message.content
-        questions = result.split('\n')
-        
-        valid_questions = [q.strip() for q in questions if re.match(r'^\d+\.\s', q.strip())]
-        
-        
-        questions_list.extend(valid_questions)
-        
-        print("number of questions: ",len(questions_list))
-        return valid_questions
-    except Exception as e:
-        print("Groq error switching to perplexity",e)
-        
-        messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        ""
-                       
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        prompt
-                    ),
-                },
-            ]
-        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
-        response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
-            messages=messages
-        )
-        
-        # print(response.choices[0].message.content)
-        result = (response.choices[0].message.content)
-        questions = result.split('\n')
-        valid_questions = [q.strip() for q in questions if re.match(r'^\d+\.\s', q.strip())]
-        
-        # global questions_list
-        questions_list.extend(valid_questions)
-        
-        print("number of questions: ",len(questions_list))
-        return valid_questions
-        # await update.message.reply_text(issue_message)
-async def generate_interactive_question(previous_question, user_answer, next_question, selected_topic, pre_questions, pre_answers):
-    try:
-        # prompt = f"Previous Question: {previous_question}\nUser's Answer: {user_answer}\nNext Question: {next_question}\n\n"
-        # prompt += f"Selected Topic for part1: {selected_topic}\n\n"
-        # prompt += f"Based on the user's answer to the previous question, generate a more relevant and context-aware question that is related to the topic and the user's response (these quetions is part of IELTS Speaking part 1 and your quetios shold be simple and not complex to help the ielts candidate asnwer properly). If the next question is on a different topic, include a transitional phrase to smoothly move to the new topic. Provide only the modified question and the number of the quetion without any additional text (in the first quetion you might will not recieve any asnwer or previvous question or any text so just ask the same quetion again also your quetions should be simple and relevent to the topic {selected_topic} when the quetions refers to move to the topic note that first questios are about the IELTS Candidate )."
-        # print(pre_questions)
-        # print(pre_answers)
-        prompt= f"""
-                Previous Question: {previous_question}
-                User's Answer: {user_answer}
-                Next Question: {next_question}
-
-                Selected Topic for part1: {selected_topic}
-
-                First, ask general questions about the IELTS candidate to start the interaction. Then, based on the user's answer to the previous question, generate a more relevant and context-aware question related to the topic and the user's response. These questions are part of IELTS Speaking part 1, and your questions should be simple and not complex to help the IELTS candidate answer properly. If the next question is on a different topic, include a transitional phrase to smoothly move to the new topic for example (now let us talk  about....  Note: you can use different phrases ). Provide only the modified question and the number of the question without any additional text. In the first question, you might not receive any answer or previous question or any text, so just ask the same question again. Also, your questions should be simple and relevant to the topic {selected_topic} when the questions refer to moving to the topic. Note that the first questions are general quetions about the IELTS Candidate. another note only ask the questions without any introduction
-                and to help you not repeating questions here are the list of previous {pre_questions} also thses are the previous answers that the user gave {pre_answers} this will help you not ask quetions that thae user has already answered from the previous questions.
-                """
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": ""},
-                {"role": "user", "content": prompt}
-            ],
-            model="llama3-70b-8192",
-        )
-        result = chat_completion.choices[0].message.content
-        return result.strip()
-    except Exception as e:
-        print("Groq error switching to perplexity",e)
-        messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        ""
-                       
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        prompt
-                    ),
-                },
-            ]
-        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
-        response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
-            messages=messages
-        )
-        
-        # print(response.choices[0].message.content)
-        result = (response.choices[0].message.content)
-        # result = re.sub(r'\*', '', result)  # Remove asterisks (*)
-        # result = re.sub(r'#', '', result)  # Remove hash symbols (#)
-        # print("feadback report generated")
-        return result.strip()
-# Function to convert text to audio using Deepgram TTS API
 async def convert_text_to_audio(text):
     global  examiner_voice
     try:
@@ -2381,6 +2173,949 @@ def get_cefr_level(ielts_score):
         return "A1"
     else:
         return "A0"
+async def generate_suggested_answer(question, previous_answer, part_type):
+    try:
+        # print(previous_answer)
+        prompt = f"Question: {question}\nuser Answer: {previous_answer}\nIELTS Speaking {part_type}\n\n"
+        prompt += f"Provide a suggested response for the given IELTS speaking question type, ensuring that the answer is appropriate in length and complexity based on the part type [{part_type}] specified. If the part is part 1, the suggested answer should be simple and not too long. If it is part 3, the suggested answer should not be too short or too long. Please only provide the suggested answer without any additional content."
+        
+        
+        # Use the LLM to generate the suggested answer
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": ""},
+                {"role": "user", "content": prompt}
+            ],
+            model=groq_model,
+        )
+        result = chat_completion.choices[0].message.content
+        print("suggetion generated")
+        return result
+    except Exception as e:
+        print("Groq error switching to perplexity",e)
+        messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        ""
+                       
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        prompt
+                    ),
+                },
+            ]
+        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
+        response = client.chat.completions.create(
+            model="llama-3-70b-instruct",
+            messages=messages
+        )
+        
+        # print(response.choices[0].message.content)
+        result = (response.choices[0].message.content)
+        result = re.sub(r'\*', '', result)  # Remove asterisks (*)
+        result = re.sub(r'#', '', result)  # Remove hash symbols (#)
+        print("feadback report generated")
+        return result
+async def send_long_message(update, context, message):
+    try:
+        num_mesages = len(message)
+    except Exception as e:
+        num_mesages = 2000
+    try:
+        max_length = 4096  # Maximum message length allowed by Telegram
+        message_chunks = [message[i:i+max_length] for i in range(0, num_mesages, max_length)]
+        
+        for chunk in message_chunks:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=chunk)
+    except Exception as e:
+        print("send long messages function ",e)
+        # await update.message.reply_text(issue_message)
+        await error_handling(update, context)
+async def generate_typical_answers(questions, answers):
+    try:
+        prompt = "Provide typical answers for the following IELTS speaking questions and user answers:\n\n"
+        for i in range(len(questions)):
+            prompt += f"Question {i+1}: {questions[i]}\nUser Answer: {answers[i]}\n\n"
+        
+        prompt += "Provide a typical answer for each question based on the user's response. Each typical answer should be presented below the original answer. These responses are from a user who was answering the IELTS Speaking test, and the typical answers should be of high quality to help the user improve for the next time. Please only include the structured format of: 1- Question, 2- Answer, 3- Typical Answer. Do not include any other text except what has been specified."
+
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": ""},
+                {"role": "user", "content": prompt}
+            ],
+            model=groq_model,
+        )
+        result = chat_completion.choices[0].message.content
+        # Remove Markdown formatting characters using regular expressions
+        result = re.sub(r'\*', '', result)  # Remove asterisks (*)
+        result = re.sub(r'#', '', result)  # Remove hash symbols (#)
+        return result
+    except Exception as e:
+        print("Groq error switching to perplexity",e)
+        messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        ""
+                       
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        prompt
+                    ),
+                },
+            ]
+        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
+        response = client.chat.completions.create(
+            model="llama-3-70b-instruct",
+            messages=messages
+        )
+        
+        # print(response.choices[0].message.content)
+        result = (response.choices[0].message.content)
+        result = re.sub(r'\*', '', result)  # Remove asterisks (*)
+        result = re.sub(r'#', '', result)  # Remove hash symbols (#)
+        # print("feadback report generated")
+        return result
+async def display_feedback(update, context, overall_avg, pronunciation_avg, fluency_avg, grammar_avg, vocabulary_avg):
+    try:
+        # Create a radar chart for visualization
+        labels = ['IELTS Score', 'Pronunciation', 'Fluency', 'Grammar', 'Vocabulary']
+        scores = [overall_avg, pronunciation_avg, fluency_avg, grammar_avg, vocabulary_avg]
+        
+        angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False)
+        scores.append(scores[0])
+        angles = np.append(angles, angles[0])
+        labels.append(labels[0])  # Append the first label to close the radar chart
+        
+        fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
+        
+        # Define colors and shapes for each skill
+        colors = ['#005C9E', '#ff7f0e', '#009F00', '#C50404', '#41007D']
+        shapes = ['o', 'o', 'o', 'o', 'o']
+        
+        # Plot each skill with a different color and shape
+        for i in range(len(labels) - 1):
+            ax.plot(angles[i:i + 2], scores[i:i + 2], marker=shapes[i], linestyle='', markersize=6, color=colors[i], label=labels[i])
+        
+        ax.fill(angles, scores, alpha=0.25)  # Adjust the alpha value to set the desired transparency
+        ax.set_thetagrids(angles * 180 / np.pi, labels)
+        ax.set_ylim(0, 9)
+        ax.grid(True)
+        
+        # Create a legend with the scores and shapes
+        legend_elements = [Line2D([0], [0], color=colors[i], marker=shapes[i], linestyle='None', markersize=6, label=f"{labels[i]}: {scores[i]:.1f}") for i in range(len(labels) - 1)]
+        ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.3, 1.0))
+        
+        # Save the plot as an image
+        plt.savefig('feedback.png', bbox_inches='tight')
+        
+        # Send the image to the user
+        with open('feedback.png', 'rb') as photo:
+            await context.bot.send_photo(chat_id=update.effective_chat.id, photo=photo)
+    except Exception as e:
+        print("dispaly feedback function ",e)
+        # await update.message.reply_text(issue_message)
+        await error_handling(update, context)
+def generate_pronunciation_visualization(answer_data):
+    try:
+        word_pronunciation_details = answer_data['word_pronunciation_details']
+        
+        colors = {
+            'Correct Pronunciation +80/100': (22, 219, 101),
+            'Slightly Incorrect Pronunciation +50/100': (255, 203, 5),
+            'Incorrect Pronunciation -50/100': (216, 0, 50)
+        }
+        
+        padding = 20
+        max_line_width = 1200 - 2 * padding
+        
+        title_font = ImageFont.truetype("Roboto-Bold.ttf", 36)
+        text_font = ImageFont.truetype("Roboto-Regular.ttf", 24)
+        guide_font = ImageFont.truetype("Roboto-Regular.ttf", 18)
+        
+        dummy_image = Image.new('RGB', (1, 1), color='white')
+        draw = ImageDraw.Draw(dummy_image)
+        
+        title = "Pronunciation Score"
+        title_width, title_height = draw.textbbox((0, 0), title, font=title_font)[2:]
+        
+        # Calculate the height needed for the image
+        y = padding + title_height + 20
+        x = padding
+        max_y = y
+        
+        for word_info in word_pronunciation_details:
+            word = word_info['word']
+            word_width, word_height = draw.textbbox((0, 0), word, font=text_font)[2:]
+            
+            if x + word_width > max_line_width:
+                x = padding
+                y += word_height + 5
+            
+            x += word_width + 10
+            max_y = max(max_y, y + word_height)
+        
+        # Add space for the guide
+        total_height = max_y + word_height + 50
+        
+        image_width = 1200
+        image_height = total_height
+        image = Image.new('RGB', (image_width, image_height), color='white')
+        draw = ImageDraw.Draw(image)
+        
+        # Draw title
+        title_x = (image_width - title_width) // 2
+        title_y = padding
+        draw.text((title_x, title_y), title, font=title_font, fill=(0, 0, 0))
+        
+        # Draw words with color coding
+        y = title_y + title_height + 20
+        x = padding
+        for word_info in word_pronunciation_details:
+            word = word_info['word']
+            score = float(word_info['pronunciation'])
+            
+            if score >= 80:
+                color = colors['Correct Pronunciation +80/100']
+            elif score >= 50:
+                color = colors['Slightly Incorrect Pronunciation +50/100']
+            else:
+                color = colors['Incorrect Pronunciation -50/100']
+            
+            word_width, word_height = draw.textbbox((0, 0), word, font=text_font)[2:]
+            
+            if x + word_width > max_line_width:
+                x = padding
+                y += word_height + 5
+            
+            draw.text((x, y), word, font=text_font, fill=color)
+            x += word_width + 10
+        
+        # Draw color guide
+        guide_y = image_height - padding - 30
+        guide_x = padding
+        for color_name, color_code in colors.items():
+            draw.rectangle((guide_x, guide_y, guide_x + 20, guide_y + 20), fill=color_code)
+            draw.text((guide_x + 30, guide_y), color_name.capitalize(), font=guide_font, fill=(0, 0, 0))
+            guide_x += draw.textbbox((0, 0), color_name.capitalize(), font=guide_font)[2] + 60
+        
+        image.save('pronunciation_visualization_with_padding.png')
+    except Exception as e:
+        print("generate pronunciation visualization function ", e)
+
+    
+async def generate_feedback_with_llm(prompt):
+    # Use the LLM to generate the detailed feedback based on the prompt
+    # You can integrate with your chosen LLM service here
+    # Example:
+    try:
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": ""},
+                {"role": "user", "content": prompt}
+            ],
+            model=groq_model,
+        )
+        feedback = chat_completion.choices[0].message.content
+        feedback = re.sub(r'\*', '', feedback)  # Remove asterisks (*)
+        feedback = re.sub(r'#', '', feedback)  # Remove hash symbols (#)
+        return feedback
+    except Exception as e:
+        print("Groq error switching to perplexity",e)
+        messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        ""
+                       
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        prompt
+                    ),
+                },
+            ]
+        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
+        response = client.chat.completions.create(
+            model="llama-3-70b-instruct",
+            messages=messages
+        )
+        
+        # print(response.choices[0].message.content)
+        feedback = (response.choices[0].message.content)
+        feedback = re.sub(r'\*', '', feedback)  # Remove asterisks (*)
+        feedback = re.sub(r'#', '', feedback)  # Remove hash symbols (#)
+        return feedback
+
+
+async def convert_answer_to_audio(user_answer, speed):
+    global  examiner_voice
+    if examiner_voice== "":
+            examiner_voice = "Liv" 
+
+    try:
+        response = requests.post(
+            'https://api.v6.unrealspeech.com/stream',
+            headers={
+                'Authorization': unreal_speech_API1
+            },
+            json={
+                'Text': user_answer,
+                'VoiceId': examiner_voice,
+                'Bitrate': '64k',
+                'Speed': speed,
+                'Pitch': '1',
+                'Codec': 'libmp3lame',
+            }
+        )
+
+        if response.status_code == 200:
+            # Generate a unique filename for the audio file
+            audio_filename = f"user_audio_{int(time.time())}.mp3"
+
+            # Save the audio content to a file
+            with open(audio_filename, 'wb') as f:
+                f.write(response.content)
+
+            return audio_filename
+        else:
+            print(f"Error converting answer to audio. Status code: {response.status_code}")
+            return ""  # Return an empty string instead of None
+
+    except Exception as e:
+        # global  examiner_voice
+        if examiner_voice== "":
+                examiner_voice = "Liv" 
+
+        
+        response = requests.post(
+                'https://api.v6.unrealspeech.com/stream',
+                headers={
+                    'Authorization': unreal_speech_API2
+                },
+                json={
+                    'Text': user_answer,
+                    'VoiceId': examiner_voice,
+                    'Bitrate': '64k',
+                    'Speed': speed,
+                    'Pitch': '1',
+                    'Codec': 'libmp3lame',
+                }
+            )
+
+        if response.status_code == 200:
+                # Generate a unique filename for the audio file
+            audio_filename = f"user_audio_{int(time.time())}.mp3"
+
+                # Save the audio content to a file
+            with open(audio_filename, 'wb') as f:
+                f.write(response.content)
+
+            return audio_filename
+        else:
+            print(f"Error converting answer to audio. Status code: {response.status_code}")
+            return ""  # Return an empty string instead of None
+
+
+async def translate_feedback(user_id, feedback, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        # Retrieve the user's native language from the database
+        user = supabase.table('ielts_speaking_users').select('native_language').eq('user_id', user_id).execute()
+        # print(user)
+        native_language = user.data[0]['native_language']
+        print("language ",native_language)
+        
+        # Use the Gemini API to translate the feedback into the user's native language
+        # genai.configure(api_key=Gemini_API_Key)
+        pro =  'gemini-1.5-pro'
+        flash = 'gemini-1.5-flash'
+        
+        model_type =  [pro, flash]
+        # prompt = f"Translate the following text from English to {native_language}:\n\n{feedback}"
+        prompt = f"""
+            Translate the provided IELTS evaluation of speaking test text from english into {native_language}. Ensure that the translation is accurate, contextually appropriate, and adheres to the linguistic standards of {native_language}.
+            Instructions:
+
+            1- Content Focus: Only include the evaluation text. Exclude any non-evaluative content to maintain the focus on the assessment aspects of the text.
+            2- Rearrange the text to align with the typical format and flow of {native_language}, while preserving the original order and organization of content.
+            3- Language Specifics:
+            - You should translate based on the required context. If the context requires any word or sentence to remain in English, leave it in English for grammar or pronunciation or any place in the text it always be between two ("") and make them inside the qoutes (""). Be cautious when you encounter this.
+            - Adjust the sentence structure and phrasing to fit the grammatical and stylistic norms of {native_language}, ensuring that the translation reads naturally to native speakers.
+            4- Accuracy and Contextual Integrity:
+            -Carefully maintain the original context and meaning of the evaluation text during translation.
+            - Ensure that all translated terms and phrases are appropriate for the context and do not alter the evaluative tone or content. 
+            
+            the evaluation text that needed to translates is:\n\n
+            {feedback}
+        """
+        supported_languages = [
+        "English", "Español", "Français", "Deutsch", "Italiano", "Português", "Русский", "日本語", "한국어", "中文",
+        "العربية", "हिन्दी", "বাংলা", "ਪੰਜਾਬੀ", "Tiếng Việt", "Türkçe",
+        "Polski", "Українська", "Nederlands", "Ελληνικά", "Svenska", "Norsk", "Dansk", "Suomi", "Čeština", "Română",
+        "Magyar", "Српски", "Hrvatski", "Български", "Lietuvių", "Latviešu", "Eesti", "Slovenščina", "Slovenčina",
+        "Kiswahili", "Bahasa Indonesia",
+        "ภาษาไทย",  "Монгол хэл", "English",
+        "Spanish",
+        "French",
+        "German",
+        "Italian",
+        "Portuguese",
+        "Russian",
+        "Japanese",
+        "Korean",
+        "Chinese",
+        "Arabic",
+        "Hindi",
+        "Bengali",
+        "Punjabi",
+        "Vietnamese",
+        "Turkish",
+        "Polish",
+        "Ukrainian",
+        "Dutch",
+        "Greek",
+        "Swedish",
+        "Norwegian",
+        "Danish",
+        "Finnish",
+        "Czech",
+        "Romanian",
+        "Hungarian",
+        "Serbian",
+        "Croatian",
+        "Bulgarian",
+        "Lithuanian",
+        "Latvian",
+        "Estonian",
+        "Slovenian",
+        "Slovak",
+        "Swahili",
+        "Indonesian",
+        "Thai",
+        "Mongolian",
+        "Hebrew"
+        "עברית"  , 
+        
+    ]
+        max_retries = 3
+        retry_count = 0
+        if native_language in supported_languages:
+            # Use the Gemini API to translate the feedback into the user's native language
+            while retry_count < max_retries:
+                try:
+                    used_key = random.choice(keys)
+                    used_model = random.choice(model_type)
+                    print("used model ",used_model)
+                    genai.configure(api_key=used_key)
+                    model = genai.GenerativeModel(used_model)
+                    # prompt = f"Translate the following text from English to {native_language}:\n\n{feedback}"
+                    response = model.generate_content(prompt)
+                    response.resolve()
+                    translated_feedback = response.text
+                    translated_feedback = re.sub(r'\*', '', translated_feedback)  # Remove asterisks (*)
+                    translated_feedback = re.sub(r'#', '', translated_feedback)  # Remove hash symbols (#)
+                    return translated_feedback
+                except Exception as e:  
+                    retry_count += 1
+                    print(f"Translation error occurred: {str(e)}. Retrying ({retry_count}/{max_retries})...")
+                # If the maximum number of retries is reached, send a failure message to the user
+            # await context.bot.send_message(chat_id=update.effective_chat.id, text="Sorry, the translation service is currently unavailable. Please try again later.")
+            keyboard = [
+            # [InlineKeyboardButton("Continue to Part 2", callback_data='continue_part_2')],
+            # [InlineKeyboardButton("Retake Part 1", callback_data='retake_part_1')],
+            [InlineKeyboardButton("End the Test", callback_data='end_test')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="Sorry, the translation service is currently unavailable. Please try again later.", reply_markup=reply_markup)
+        
+        else:
+            # Return None to indicate that translation is not available
+            return None
+    except Exception as e:
+        print("translate feedback",e)
+        # await update.message.reply_text(issue_message)
+        await error_handling(update, context)
+
+def is_valid_gmail(email):
+    try:
+        print("is valid gmail")
+        gmail_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@gmail\.com$')
+        return gmail_regex.match(email) is not None
+    except Exception as e:
+        print("is valid gmail function",e)
+        return True
+        # await update.message.reply_text(issue_message)
+
+def is_real_gmail(email):
+    try:
+        print("is real gmail")
+        api_keys = [
+           "5d64616c34d64b4e98f2647a29648a53",
+            "ff1552bbc5dd4dbc87e5c85645db1cb7",
+            "e9f36cc57580421184a1bc62fd297fb0",
+            "851b30614b984b6588ef91fb6c9b69ab",
+        ]
+        retries = 3
+        while retries > 0:
+            api_key = random.choice(api_keys)
+            try:
+                url = "https://emailvalidation.abstractapi.com/v1"
+                querystring = {"api_key": api_key, "email": email}
+            
+                response = requests.get(url, params=querystring)
+                data = response.json()
+                deliverability = data.get("deliverability")
+            
+                if deliverability == "DELIVERABLE":
+                    return True
+                elif deliverability == "UNDELIVERABLE":
+                    return False
+            except Exception as e:
+                print(f"Error verifying email with API key {api_key}: {e}")
+                retries -= 1
+        
+        return True
+    except Exception as e:
+        print(e)
+        return True
+        # await update.message.reply_text(issue_message)
+
+#------------------------ Part 1---------------------------- 
+# Helper function to ask for Part 1 topic
+async def ask_part_1_topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        print("ask part 1 topic")
+        global part_1_topics
+        part_1_topics = [
+        "Study 📚",
+        "Work 💼",
+        "Hometown 🏡",
+        "Home/ Accommodation 🏘️",
+        "Family 👨‍👩‍👧‍👦",
+        "Friends 👥",
+        "Clothes 👕",
+        "Fashion 👗",
+        "Gifts 🎁",
+        "Daily routine 📅",
+        "Daily activities 🏃‍♂️",
+        "Food/ Cooking 🍳",
+        "Drinks 🥤",
+        "Going out 🎉",
+        "Hobbies 🎨",
+        "Language 🌐",
+        "Leisure time activity ⏰",
+        "Sports ⚽",
+        "Future plan 🔮",
+        "Music 🎵",
+        "Newspapers 📰",
+        "Pets 🐾",
+        "Flowers & Plants 🌸",
+        "Reading 📖",
+        "Dancing 💃",
+        "Exercise 💪",
+        "Shopping 🛍️",
+        "Magazines & TV 📺",
+        "Travelling ✈️",
+        "Interesting places 🏰",
+        "Bicycle 🚲",
+        "Seasons 🍂",
+        "Maps 🗺️",
+        "Internet & Technology 💻",
+        "Weather ☀️",
+        "Festivals 🎆",
+        "Culture/ Tradition 🎭"
+    ]
+        
+        topics_message = "Please select the topic you want to practice \n(write the number of the topic):\n\n"
+        topics_message += "\n".join([f"{i+1}. {topic}" for i, topic in enumerate(part_1_topics)])
+        
+        
+        context.user_data['part_1_topic_selection'] = True
+        await update.effective_message.reply_text(topics_message, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Random", callback_data="topic_random")]
+        ]))
+    except Exception as e:
+        print("ask part 1 topic function ",e)
+        # await update.message.reply_text(issue_message)
+        await error_handling(update, context)
+async def ask_test_part(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print("ask test part")
+    try:
+        keyboard = [
+            [KeyboardButton("Part 1"), KeyboardButton("Part 2")],
+            [KeyboardButton("Part 3"), KeyboardButton("Mock Test")],
+            [KeyboardButton("Main menu")]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+        await update.effective_message.reply_text("Which part of the IELTS Speaking test would you like to practice today?", reply_markup=reply_markup)
+    except Exception as e:
+        print("ask task part ",e)
+        # await update.message.reply_text(issue_message)
+        await error_handling(update, context)
+async def generate_and_ask_questions(update: Update, context: ContextTypes.DEFAULT_TYPE, topic):
+    try:
+        print("generate and ask questions")
+        # Use Groq API to generate questions
+        questions = await generate_questions(topic)
+        if not questions:
+            await error_handling(update, context)
+            return
+        v_topic = topic 
+        # Get the vocabulary list for the selected topic
+        vocabularies = topic_vocabularies.get(v_topic, [])
+        # print(topic[:-2])
+        # print("vocabularys:\n",vocabularies)
+        # Send the vocabulary list to the user
+        if vocabularies:
+            vocabulary_message = "Here are some vocabularies you can use in your speaking:\n" + ", ".join(vocabularies)
+            await update.effective_message.reply_text(vocabulary_message)
+        
+        context.user_data[f'{userID}questions'] = questions
+        context.user_data[f'{userID}answers'] = {}
+        context.user_data[f'{userID}current_question_index'] = 0
+        await update.effective_message.reply_text(f"IELTS Speaking Part 1:\n\nNow, we will begin Part 1 of the IELTS Speaking test. In this part, I will ask you ({len(questions_list)}) questions including general questions about yourselt your home or your job, etc.. as well as questions on the topic of {topic[:-2]} \n\nPlease answer each question in 15 to 40 seconds. \n\nLet's start") 
+        # time.sleep(1)
+        
+        await ask_current_question(update, context)
+    except Exception as e:
+        print("generate and ask questions function",e)
+        # await update.message.reply_text(issue_message)
+        await error_handling(update, context)
+# Helper function to ask the current question
+async def ask_current_question(update: Update, context: ContextTypes.DEFAULT_TYPE, retry=False):
+    try:
+        print("ask current question")
+        global questions_list, list_previous_quetions, list_previous_answers
+        
+        current_question_index = context.user_data.get(f'{userID}current_question_index', 0)
+        
+        if retry:
+            # await update.effective_message.reply_text("Please re-answer the question.")
+            
+            # Provide only the "Suggest Answer" option
+            keyboard = [
+                [InlineKeyboardButton("Suggest Answer", callback_data='suggest_answer')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.effective_message.reply_text("Please re-answer the question.", reply_markup=reply_markup)
+        else:
+            if current_question_index < len(questions_list):
+                previous_question = questions_list[current_question_index - 1] if current_question_index > 0 else ""
+                current_question = questions_list[current_question_index].strip()
+                user_answer = answers_list[current_question_index - 1] if current_question_index > 0 else ""
+                selected_topic = context.user_data[f'{userID}selected_topic']
+                list_previous_quetions.append(previous_question) 
+                list_previous_answers.append(user_answer)
+                # Generate an interactive question based on the previous question, user's answer, and the current question
+                interactive_question = await generate_interactive_question(previous_question, user_answer, current_question, selected_topic,list_previous_quetions,list_previous_answers )
+                # print("current question: ",current_question, "\ninteractive question: ",interactive_question)
+                
+                if interactive_question:
+                    # Replace the original question in the questions_list with the generated interactive question
+                    questions_list[current_question_index] = interactive_question
+                    
+                    context.user_data[f'{userID}current_question'] = interactive_question
+                    
+                    # Convert question to audio using Deepgram TTS API
+                    try:
+                        # await update.effective_message.reply_text("  ")
+                        # print(len(list_previous_quetions), len(list_previous_answers))
+                        await update.effective_message.reply_text(interactive_question)
+                        audio_file_path = await convert_text_to_audio(interactive_question)
+                        
+                        with open(audio_file_path, 'rb') as audio:
+                            await update.effective_message.reply_voice(voice=audio)
+                        await update.effective_message.reply_text("Please record your answer.")
+                        context.user_data[f'{userID}answering_question'] = True
+                        print("Set answering_question to True")
+                    except Exception as e:
+                        print(f"Error converting text to audio: {e}")
+                        # Retry the conversion without sending an error message
+                        await update.effective_message.reply_text("Please record your answer.")
+                        context.user_data[f'{userID}answering_question'] = True
+                        print("Set answering_question to True")
+                else:
+                    current_question_index += 1
+                    context.user_data[f'{userID}current_question_index'] = current_question_index
+                    await ask_current_question(update, context)
+            else:
+                await show_results(update, context)
+    except Exception as e:
+        print("ask current question function ",e)
+        # await update.message.reply_text(issue_message)
+        await error_handling(update, context)
+# Helper function to move to the next question
+async def move_to_next_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        print("move to next question")
+        current_question_index = context.user_data.get(f'{userID}current_question_index', 0)
+        
+        if current_question_index < len(questions_list) - 1:
+            context.user_data[f'{userID}current_question_index'] = current_question_index + 1
+            await ask_current_question(update, context)
+        else:
+            await show_results(update, context)
+    except Exception as e:
+        print("move to next question function ",e)
+        # await update.message.reply_text(issue_message)
+        await error_handling(update, context)
+# Helper function to show results
+async def show_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        print("show results")
+        global questions_list, answers_list, voice_urls
+        # print(questions_list)
+        # print("------------------------------")
+        # print(answers_list)
+        # print("------------------------------")
+        # print(voice_urls)
+        # print("------------------------------")
+        # Format the questions and answers into a single message
+        result_message = "Here are your questions and answers:\n\n"
+        for i in range(len(questions_list)):
+            question = questions_list[i]
+            answer = answers_list[i] if i < len(answers_list) else "No answer provided"
+            result_message += f"Question: {question}\n\nAnswer: {answer}\n\n"
+        
+        # # Split the message into smaller chunks
+        # max_length = 4096  # Maximum message length allowed by Telegram
+        # message_chunks = [result_message[i:i+max_length] for i in range(0, len(result_message), max_length)]
+        
+        # # Send each chunk as a separate message
+        # for chunk in message_chunks:
+        #     await update.effective_message.reply_text(chunk)
+        await send_long_message(update, context, result_message)
+        # Prompt the user to continue to Part 2, retake Part 1, or end the test
+        await update.effective_message.reply_text("Please select one of these options.", reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("Continue to Part 2", callback_data='continue_part_2')],
+            [InlineKeyboardButton("Retake Part 1", callback_data='retake_part_1')],
+            [InlineKeyboardButton("Show Results", callback_data='show_results')],
+            [InlineKeyboardButton("End the Test", callback_data='end_test')]
+        ]))
+    except Exception as e:
+        print("show results function ",e)
+        # await update.message.reply_text(issue_message)
+        await error_handling(update, context)
+# Function to generate questions using Groq API
+async def generate_questions(topic):
+    global questions_list
+    try:
+        print("generate questions")
+        prompt = f"You are an IELTS Speaking examiner and now you are testing an IELTS candidate. This is Part 1 of the test, and you need to ask between 5 to 6 questions about this topic: {topic}. You should only ask questions and nothing else. First, ask 2 or 3 general questions about the candidate, followed by 4 or 5 questions on the given topic. Ensure your questions are exactly like those a real examiner would ask. Number each question."
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": ""},
+                {"role": "user", "content": prompt}
+            ],
+            model=groq_model,
+        )
+        result = chat_completion.choices[0].message.content
+        # print(result)
+        questions = result.split('\n')
+        
+        valid_questions = [q.strip() for q in questions if re.match(r'^\d+\.\s', q.strip())]
+        
+        
+        questions_list.extend(valid_questions)
+        
+        print("number of questions: ",len(questions_list))
+        return valid_questions
+    except Exception as e:
+        print("Groq error switching to perplexity",e)
+        
+        messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        ""
+                       
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        prompt
+                    ),
+                },
+            ]
+        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
+        response = client.chat.completions.create(
+            model="llama-3-70b-instruct",
+            messages=messages
+        )
+        
+        # print(response.choices[0].message.content)
+        result = (response.choices[0].message.content)
+        questions = result.split('\n')
+        valid_questions = [q.strip() for q in questions if re.match(r'^\d+\.\s', q.strip())]
+        
+        # global questions_list
+        questions_list.extend(valid_questions)
+        
+        print("number of questions: ",len(questions_list))
+        return valid_questions
+        # await update.message.reply_text(issue_message)
+async def generate_interactive_question(previous_question, user_answer, next_question, selected_topic, pre_questions, pre_answers):
+    try:
+        # prompt = f"Previous Question: {previous_question}\nUser's Answer: {user_answer}\nNext Question: {next_question}\n\n"
+        # prompt += f"Selected Topic for part1: {selected_topic}\n\n"
+        # prompt += f"Based on the user's answer to the previous question, generate a more relevant and context-aware question that is related to the topic and the user's response (these quetions is part of IELTS Speaking part 1 and your quetios shold be simple and not complex to help the ielts candidate asnwer properly). If the next question is on a different topic, include a transitional phrase to smoothly move to the new topic. Provide only the modified question and the number of the quetion without any additional text (in the first quetion you might will not recieve any asnwer or previvous question or any text so just ask the same quetion again also your quetions should be simple and relevent to the topic {selected_topic} when the quetions refers to move to the topic note that first questios are about the IELTS Candidate )."
+        # print(pre_questions)
+        # print(pre_answers)
+        prompt= f"""
+                Previous Question: {previous_question}
+                User's Answer: {user_answer}
+                Next Question: {next_question}
+
+                Selected Topic for part1: {selected_topic}
+
+                First, ask general questions about the IELTS candidate to start the interaction. Then, based on the user's answer to the previous question, generate a more relevant and context-aware question related to the topic and the user's response. These questions are part of IELTS Speaking part 1, and your questions should be simple and not complex to help the IELTS candidate answer properly. If the next question is on a different topic, include a transitional phrase to smoothly move to the new topic for example (now let us talk  about....  Note: you can use different phrases ). Provide only the modified question and the number of the question without any additional text. In the first question, you might not receive any answer or previous question or any text, so just ask the same question again. Also, your questions should be simple and relevant to the topic {selected_topic} when the questions refer to moving to the topic. Note that the first questions are general quetions about the IELTS Candidate. another note only ask the questions without any introduction
+                and to help you not repeating questions here are the list of previous {pre_questions} also thses are the previous answers that the user gave {pre_answers} this will help you not ask quetions that thae user has already answered from the previous questions.
+                """
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": ""},
+                {"role": "user", "content": prompt}
+            ],
+            model=groq_model,
+        )
+        result = chat_completion.choices[0].message.content
+        return result.strip()
+    except Exception as e:
+        print("Groq error switching to perplexity",e)
+        messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        ""
+                       
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        prompt
+                    ),
+                },
+            ]
+        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
+        response = client.chat.completions.create(
+            model="llama-3-70b-instruct",
+            messages=messages
+        )
+        
+        # print(response.choices[0].message.content)
+        result = (response.choices[0].message.content)
+        # result = re.sub(r'\*', '', result)  # Remove asterisks (*)
+        # result = re.sub(r'#', '', result)  # Remove hash symbols (#)
+        # print("feadback report generated")
+        return result.strip()
+# Function to convert text to audio using Deepgram TTS API
+async def generate_feedback(scores_list, questions, answers, overall_avg):
+    try:
+        prompt = "Provide detailed feedback for the following IELTS speaking assessment for Part 1:\n\n"
+        for i in range(len(questions)):
+            prompt += f"Question {i+1}: {questions[i]}\n"
+            prompt += f"Transcription of user answer: {answers[i]}\n\n"
+            prompt += f"Pronunciation score: {scores_list[i]['pronunciation']}\n"
+            prompt += f"Fluency score: {scores_list[i]['fluency']}\n"
+            prompt += f"Grammar score: {scores_list[i]['grammar']}\n"
+            prompt += f"Vocabulary score: {scores_list[i]['vocabulary']}\n"
+            # prompt += f"Fillers: {scores_list[i]['pause_filler']}\n"
+            # prompt += "Sentences of the answer (here is a detailed summary of the sentences in the answer):\n"
+            # for sentence in scores_list[i]['sentences']:
+            #     prompt += f"  - Sentence: {sentence['sentence']}\n"
+            #     prompt += f"    Pronunciation of the sentence: {sentence['pronunciation']}\n"
+            #     prompt += f"    Grammar Correction if mistakes exist: {sentence['grammar']}\n"
+            # prompt += "\n"
+        # prompt += f"Provide an overall feedback report on the user's performance, including pronunciation, fluency, grammar, and vocabulary etc. and here are the ielts speaking band score of part 1 {overall_avg} you should provide a clear and good feedback to the IELTS Candidate he expects to kmow his mistakes and improve next time and  best tips and suggetions to  get hisa imed score {targeted_score}"
+        prompt += f"""
+            Please provide a detailed feedback report on the user's performance in Part 1 of the IELTS speaking test, covering aspects such as pronunciation, fluency and coherence, grammatical range and accuracy, lexical resource (vocabulary), interactive communication, and overall performance. Offer specific examples, constructive feedback, and practical suggestions for each aspect to help the candidate identify their strengths and weaknesses. Emphasize the importance of continuous practice, active listening, and critical thinking to enhance their performance and provide language learning strategies. Encourage the candidate to reflect on their performance and set achievable goals for their IELTS speaking development. Your feedback should be supportive and encouraging, aiming to motivate the candidate in their IELTS speaking journey. Organize the feedback in a clear and structured manner, using headings and bullet points for easy readability and do not  write any non-needed text.
+
+            1. Pronunciation:
+            - Clarity and intelligibility
+            - Stress, rhythm, and intonation
+            - Individual sounds and phonemes
+            - Areas for improvement and specific examples
+
+            2. Fluency and Coherence:
+            - Smooth flow of speech
+            - Hesitation, repetition, and self-correction
+            - Logical sequencing of ideas
+            - Cohesive devices and discourse markers
+            - Suggestions for enhancing fluency
+
+            3. Lexical Resource (Vocabulary):
+            - Range and variety of vocabulary
+            - Accuracy and appropriacy of word choice
+            - Idiomatic language and collocation
+            - Recommendations for expanding vocabulary
+
+            4. Grammatical Range and Accuracy:
+            - Variety and complexity of grammatical structures
+            - Accuracy and control of grammar
+            - Errors and their impact on clarity
+            - Tips for improving grammatical accuracy
+
+            5. Overall Performance:
+            - Here is the list of all overall scores of speaking skills with the overall IELTS band score of Part 1 {overall_avg} 
+            - Strengths and weaknesses
+            - Comparison to the target score of {targeted_score}
+            - Actionable steps to bridge the gap and achieve the desired score
+
+            Please provide specific examples, constructive feedback, and practical suggestions throughout the report to help the candidate identify areas for improvement and work towards their target score. Use a friendly and encouraging tone to motivate the candidate in their IELTS speaking journey.
+            """
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": ""},
+                {"role": "user", "content": prompt}
+            ],
+            model=groq_model,
+        )
+        result = chat_completion.choices[0].message.content
+        result = re.sub(r'\*', '', result)  # Remove asterisks (*)
+        result = re.sub(r'#', '', result)  # Remove hash symbols (#)
+        print("feadback report generated")
+        return result
+    except Exception as e:
+        print("Groq error switching to perplexity",e)
+        messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        ""
+                       
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        prompt
+                    ),
+                },
+            ]
+        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
+        response = client.chat.completions.create(
+            model="llama-3-70b-instruct",
+            messages=messages
+        )
+        
+        # print(response.choices[0].message.content)
+        result = (response.choices[0].message.content)
+        result = re.sub(r'\*', '', result)  # Remove asterisks (*)
+        result = re.sub(r'#', '', result)  # Remove hash symbols (#)
+        print("feadback report generated")
+        return result
 async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         print("-----------------------FEEDBACK PART 1------------------------")
@@ -2408,7 +3143,7 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup = InlineKeyboardMarkup(keyboard)
         share_message = await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="while waiting the results. Would you like to share this bot?",
+            text="while waiting the results. Would you like to share this bot? 😊",
             reply_markup=reply_markup,
             parse_mode='HTML'
         )
@@ -2545,224 +3280,8 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
         print("show results part 1 function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-async def show_result2(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        print("-----------------------FEEDBACK PART 2------------------------")
-        global part2_voice_urls
-        analysis_data = analysis2_list
-        # print("Voice URLs:", part2_voice_urls)
-        print("user_targetes_score: ",targeted_score)
-        # Send the sticker and waiting message after sending typical answers
-        animated_emoji = "⏳"  # Hourglass emoji
-        waiting_message = await context.bot.send_message(chat_id=update.effective_chat.id, text=animated_emoji)
-        # await context.bot.send_message(chat_id=update.effective_chat.id, text="Please wait a few minutes until result is ready.")
-        
-        progress_message = await context.bot.send_message(chat_id=update.effective_chat.id, text="Wait a few minutes until results are ready...\n\n[                             ] 0%")
-
-        # Send a message asking the user to share the bot
-        share_message = (
-            f"Discover this IELTS Speaking  Bot! It simulates the IELTS speaking test and provides detailed feedback about your speaking skills and estimated IELTS band score. to help you improve. Try it for free now: https://t.me/ielts_speakingAI_bot"
-        )
-        keyboard = [
-            [InlineKeyboardButton("Share the Bot", switch_inline_query=share_message)]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        share_message = await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="while waiting the results. Would you like to share this bot?",
-            reply_markup=reply_markup,
-            parse_mode='HTML'
-        )
-
-        # Define the steps of the processing
-        steps = [
-            "Transcribing answers...",
-            "Analyzing responses...",
-            "Generating feedback...",
-            "Compiling results..."
-        ]
-
-        total_steps = len(steps) + len(mock_part1_questions) + len(mock_part3_questions) + 1  # +1 for Part 2 assessment
-        current_step = 0
-
-        def update_progress():
-            nonlocal current_step
-            current_step += 1
-            progress = int((current_step / total_steps) * 100)
-            progress_bar = "[" + "█" * (progress // 5) + " " * (20 - (progress // 5)) + "]"
-            return progress, progress_bar
-    
-    
-    
-    
-    
-    
-        scores2_list = []
-        assessment_tasks = []
-        
-        for i in range(len(part2_questions)):
-            audio_url = part2_voice_urls[i]
-            question_prompt = part2_questions[i]
-            task_type = "ielts_part2"  # Change as needed
-            
-            assessment_task = asyncio.create_task(assess_part2_speech_async(audio_url, question_prompt, task_type))
-            assessment_tasks.append(assessment_task)
-            # print("assessment_task: ",assessment_task)
-            # Update progress
-            progress, progress_bar = update_progress()
-            await context.bot.edit_message_text(
-                chat_id=update.effective_chat.id,
-                message_id=progress_message.message_id,
-                text=f"Wait a few minutes until results are ready...\n{progress_bar} {progress}%"
-            )
-        # Wait for all assessment tasks to complete
-        scores_results = await asyncio.gather(*assessment_tasks)
-        # print("scores_results ",scores_results)
-        for i, scores in enumerate(scores_results):
-            if scores:
-                scores2_list.append(scores)
-                # print("scores ",scores)
-                print(f"Assessment successful for question {i+1}")
-            else:
-                print(f"Assessment failed for question {i+1}")
-        
-        if scores2_list:
-            # print(scores2_list)
-            # Delete the waiting message (sticker)
-            # await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
-            
-            #Get the scores from the assessment results
-            overall_score = scores2_list[0].get("overall", 0)
-            pronunciation_score = scores2_list[0].get("pronunciation", 0)
-            fluency_score = scores2_list[0].get("fluency", 0)
-            grammar_score = scores2_list[0].get("grammar", 0)
-            vocabulary_score = scores2_list[0].get("vocabulary", 0)
-            
-            # Generate feedback report
-            feedback2_report = await generate_feedback2(scores2_list, part2_questions, part2_answers, overall_score)
-            context.user_data[f'{userID}overall_part2_feedback'] = feedback2_report
-            # Send feedback report
-            # Update progress
-            progress, progress_bar = update_progress()
-            await context.bot.edit_message_text(
-                chat_id=update.effective_chat.id,
-                message_id=progress_message.message_id,
-                # text=f"Wait a few minutes until results are ready...\n{progress_bar} {progress}%"
-                text=f"Wait a few minutes until results are ready...\n{progress_bar} 100%"
-            )
-            # Delete the waiting message and the share message
-            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=progress_message.message_id)
-            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=share_message.message_id)
-            await context.bot.delete_message(chat_id=update.effective_chat.id,message_id=waiting_message.message_id)
-            await send_long_message(update, context, feedback2_report)
-            # audio_file_path = await convert_text_to_audio(feedback2_report)
-                        
-            # with open(audio_file_path, 'rb') as audio:
-            #         await update.effective_message.reply_voice(voice=audio)
-            #
-            # Round the scores to the nearest 0.5
-            overall_score = round_to_ielts_score(overall_score)
-            pronunciation_score = round_to_ielts_score(pronunciation_score)
-            fluency_score = round_to_ielts_score(fluency_score)
-            grammar_score = round_to_ielts_score(grammar_score)
-            vocabulary_score = round_to_ielts_score(vocabulary_score)
-            
-            # Display feedback visualization
-            await display_feedback(update, context, overall_score, pronunciation_score, fluency_score, grammar_score, vocabulary_score)
-            
-            # Send the band score as text
-            band_score = f"Your estimated IELTS band score for Part 2 is: {overall_score:.1f}"
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=band_score)
-            
-            # Get the CEFR level based on the IELTS score
-            cefr_level = get_cefr_level(overall_score)
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Your language level is: {cefr_level}")
-            await append_speaking_score(update,context,"part2", overall_score)
-            await increment_practice_count(update, context)
-            # generate_pronunciation_visualization(analysis_data)
-            # with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
-            #     await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
-            # Provide user options
-            keyboard = [
-                [InlineKeyboardButton("Continue to Part 3", callback_data='continue_part3')],
-                [InlineKeyboardButton("See Detailed Results", callback_data='detailed2_results')],
-                [InlineKeyboardButton("Translate", callback_data='translate_overall2_feedback')],
-                [InlineKeyboardButton("Retake Part 2", callback_data='retake_part2')],
-                [InlineKeyboardButton("End the Test", callback_data='end_test')]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="What would you like to do next?", reply_markup=reply_markup)
-            
-            # Clear the lists after the feedback is completed
-            # voice_urls.clear()
-            # questions_list.clear()
-            # answers_list.clear()
-        else:
-            await update.callback_query.message.reply_text("Failed to assess the answers. Please try again.")
-    except Exception as e:
-        print("show results part 2",e)
-        # await update.message.reply_text(issue_message)
-        await error_handling(update, context)
-async def generate_suggested_answer(question, previous_answer, part_type):
-    try:
-        # print(previous_answer)
-        prompt = f"Question: {question}\nuser Answer: {previous_answer}\nIELTS Speaking {part_type}\n\n"
-        prompt += f"Provide a suggested response for the given IELTS speaking question type, ensuring that the answer is appropriate in length and complexity based on the part type [{part_type}] specified. If the part is part 1, the suggested answer should be simple and not too long. If it is part 3, the suggested answer should not be too short or too long. Please only provide the suggested answer without any additional content."
-        
-        
-        # Use the LLM to generate the suggested answer
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": ""},
-                {"role": "user", "content": prompt}
-            ],
-            model="llama3-70b-8192",
-        )
-        result = chat_completion.choices[0].message.content
-        print("suggetion generated")
-        return result
-    except Exception as e:
-        print("Groq error switching to perplexity",e)
-        messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        ""
-                       
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        prompt
-                    ),
-                },
-            ]
-        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
-        response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
-            messages=messages
-        )
-        
-        # print(response.choices[0].message.content)
-        result = (response.choices[0].message.content)
-        result = re.sub(r'\*', '', result)  # Remove asterisks (*)
-        result = re.sub(r'#', '', result)  # Remove hash symbols (#)
-        print("feadback report generated")
-        return result
-async def send_long_message(update, context, message):
-    num_mesages = len(message)
-    try:
-        max_length = 4096  # Maximum message length allowed by Telegram
-        message_chunks = [message[i:i+max_length] for i in range(0, num_mesages, max_length)]
-        
-        for chunk in message_chunks:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=chunk)
-    except Exception as e:
-        print("send long messages function ",e)
-        # await update.message.reply_text(issue_message)
-        await error_handling(update, context)
 async def assess_speech_async(audio_url, question_prompt, task_type):
+    global part_1_minute
     # start_time = time.time()
     
     try:
@@ -2775,64 +3294,141 @@ async def assess_speech_async(audio_url, question_prompt, task_type):
         # Save the downloaded file locally
         with open(filename, "wb") as file:
             file.write(response.content)
+        if part_1_minute:  
+            print("use speech super API (part 1)")
+            scores, analysis_data = assess_speech2(filename, question_prompt, task_type)
+            # analysis_list.append(analysis_data)
         # scores,analysis_data = assess_speech(filename, question_prompt, task_type)
-        # response_json = scores  # Assuming assess_speech returns the JSON response directly
-        # analysis_list.append(analysis_data)
-        # # print(analysis_data)
-        # if 'result' in response_json:
-        #     result = response_json['result']
-        #     scores = {
-        #         "overall": result.get("overall", "N/A"),
-        #         "pronunciation": result.get("pronunciation", "N/A"),
-        #         "fluency": result.get("fluency_coherence", "N/A"),
-        #         "grammar": result.get("grammar", "N/A"),
-        #         "vocabulary": result.get("lexical_resource", "N/A"),
-        #         "relevance": result.get("relevance", "N/A"),
-        #         "transcription": result.get("transcription", "N/A"),
-        #         # "pause_filler": result.get("pause_filler", {}),
-        #         "sentences": [
-        #             {
-        #                 "sentence": sentence.get("sentence", ""),
-        #                 "pronunciation": sentence.get("pronunciation", "N/A"),
-        #                 "grammar": sentence.get("grammar", {}).get("corrected", "")
-        #             }
-        #             for sentence in result.get("sentences", [])
-        #         ]
-        #     }
-        #     # analysis_list.append(scores)
+            response_json = scores  # Assuming assess_speech returns the JSON response directly
+            analysis_list.append(analysis_data)
+            # print(analysis_data)
+            if 'result' in response_json:
+                result = response_json['result']
+                scores = {
+                    "overall": result.get("overall", 0),
+                    "pronunciation": result.get("pronunciation", 0),
+                    "fluency": result.get("fluency_coherence", 0),
+                    "grammar": result.get("grammar", "N/A"),
+                    "vocabulary": result.get("lexical_resource", 0),
+                    "relevance": result.get("relevance", "N/A"),
+                    "transcription": result.get("transcription", 0),
+                    # "pause_filler": result.get("pause_filler", {}),
+                    # "sentences": [
+                    #     {
+                    #         "sentence": sentence.get("sentence", ""),
+                    #         "pronunciation": sentence.get("pronunciation", "N/A"),
+                    #         "grammar": sentence.get("grammar", {}).get("corrected", "")
+                    #     }
+                    #     for sentence in result.get("sentences", [])
+                    # ]
+                }
+                # analysis_list.append(scores)
+            
+            # end_time = time.time()
+            # execution_time = end_time - start_time
+            # print(f"Execution time: {execution_time} seconds")
+            os.remove(filename)
+            # print(scores)
+            return scores
         
-        # # end_time = time.time()
-        # # execution_time = end_time - start_time
-        # # print(f"Execution time: {execution_time} seconds")
-        # os.remove(filename)
-        # # print(scores)
-        # return scores
-        scores, analysis_data = assess_speech(filename, question_prompt)
-        analysis_list.append(analysis_data)
+        else:
+            scores, analysis_data = assess_speech(filename, question_prompt)
+            analysis_list.append(analysis_data)
         # print(analysis_data)
         # Process the scores and analysis_data to match the expected output format
-        processed_scores = {
-            "overall": scores['ielts_score']['overall'],
-            "pronunciation": scores['ielts_score']['pronunciation'],
-            "fluency": scores['ielts_score']['fluency'],
-            "grammar": scores['ielts_score']['grammar'],
-            "vocabulary": scores['ielts_score']['vocabulary'],
-            "relevance": scores['relevance']['class'],
-            "transcription": scores['transcription'],
-            # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
-        }
+            processed_scores = {
+                "overall": scores['ielts_score']['overall'],
+                "pronunciation": scores['ielts_score']['pronunciation'],
+                "fluency": scores['ielts_score']['fluency'],
+                "grammar": scores['ielts_score']['grammar'],
+                "vocabulary": scores['ielts_score']['vocabulary'],
+                "relevance": scores['relevance']['class'],
+                "transcription": scores['transcription'],
+                # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
+            }
 
-        # Add word-level details to the processed_scores
-        # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
+            # Add word-level details to the processed_scores
+            # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
 
-        # Clean up the temporary file
-        os.remove(filename)
-        # print(processed_scores)
-        return processed_scores
+            # Clean up the temporary file
+            os.remove(filename)
+            # print(processed_scores)
+            return processed_scores
     except Exception as e:
         print(f"Error assessing speech: {str(e)}")
         return None
+async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        detailed_feedback = []
+        global questions_list, answers_list, analysis_list
+        for i in range(len(questions_list)):
+            question = questions_list[i]
+            user_answer = answers_list[i]
+            analysis_data = analysis_list[i]
+            user_voice_url = voice_urls[i]
+            # print(user_voice_url)
+            prompt = f"Question: {question}\nUser Answer: {user_answer}\nAnalysis Data: {analysis_data}\n\n"
+            prompt += """Please provide a detailed analysis of the user's answer, considering the pronunciation, fluency, grammar, vocabulary, and relevance. Generate useful feedback that helps the user understand their performance in depth.
+            you should orginze it in a clear and good feedback to the IELTS Candidate he expects to kmow his mistakes and improve next time also it is a good idea to write the quetion in the feedback and the answer and then start your analysis
+            
+            """
+            
+            feedback = await generate_feedback_with_llm(prompt)
+            detailed_feedback.append(feedback)
+            detailed_feedback_list.append(feedback)
+            # await context.bot.send_message(chat_id=update.effective_chat.id, text=feedback)
+            await send_long_message(update, context, feedback)
+            # Generate and send the pronunciation visualization image
+            if part_1_minute:
+                generate_pronunciation_visualization2(analysis_data)
+            else:
+                generate_pronunciation_visualization(analysis_data)
+            with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
+                await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
+            # Send a message to compare pronunciation
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="Now, let's compare your pronunciation with a native speaker's pronunciation.")
+            
+            # Download the voice file from the URL
+            response = requests.get(user_voice_url)
+            voice_filename = f"user_voice_{i}.oga"
+            with open(voice_filename, "wb") as file:
+                file.write(response.content)
+            
+            # Send user's original voice
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="Your Voice:")
+            with open(voice_filename, "rb") as user_voice_file:
+                await context.bot.send_voice(chat_id=update.effective_chat.id, voice=user_voice_file)
+            
+            # Delete the user's voice file from disk
+            os.remove(voice_filename)
+            await asyncio.sleep(2)
+            # Generate native speaker's audio with slow speed
+            slow_audio_path = await convert_answer_to_audio(user_answer, speed='-0.56')
+            
+            # Send native speaker's audio with slow speed
+            with open(slow_audio_path, 'rb') as slow_audio_file:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text="Native Speaker's Voice (Slow Speed):")
+                await context.bot.send_voice(chat_id=update.effective_chat.id, voice=slow_audio_file)
+            os.remove(slow_audio_path)
+            await asyncio.sleep(2)
+            # Generate native speaker's audio with normal speed
+            normal_audio_path = await convert_answer_to_audio(user_answer, speed='0')
+            
+            # Send native speaker's audio with normal speed
+            with open(normal_audio_path, 'rb') as normal_audio_file:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text="Native Speaker's Voice (Normal Speed):")
+                await context.bot.send_voice(chat_id=update.effective_chat.id, voice=normal_audio_file)
+            os.remove(normal_audio_path)
+            # Send a message to encourage comparison
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="Listen to your voice and compare it with the native speaker's pronunciation at both speeds.")
+        return detailed_feedback
+    except Exception as e:
+        print("generate detailed feedback part 1 function ",e)
+        # await update.message.reply_text(issue_message)
+        await error_handling(update, context)
 
+
+# ---------------------------------- Part 2 ------------------------------------
 async def assess_part2_speech_async(audio_url, question_prompt, task_type) :
     try:
         # Download the voice file from the URL
@@ -2840,244 +3436,60 @@ async def assess_part2_speech_async(audio_url, question_prompt, task_type) :
         # print(audio_url, question_prompt, task_type)
         # Generate a unique filename for the downloaded file
         filename = f"voice_{int(time.time())}.oga"
-        
+        # print(filename)
         # Save the downloaded file locally
         with open(filename, "wb") as file:
             file.write(response.content)
         
         # Assess the speech using the existing assess_speech function
-        scores, analysis_data = assess_speech(filename, question_prompt, task_type)
-        # response_json = scores  # Assuming assess_speech returns the JSON response directly
+        scores, analysis_data = assess_speech2(filename, question_prompt,task_type)
+        response_json = scores  # Assuming assess_speech returns the JSON response directly
         analysis2_list.append(analysis_data)
-        # if 'result' in response_json:
-        #     result = response_json['result']
-        #     scores = {
-        #         "overall": result.get("overall", "N/A"),
-        #         "pronunciation": result.get("pronunciation", "N/A"),
-        #         "fluency": result.get("fluency_coherence", "N/A"),
-        #         "grammar": result.get("grammar", "N/A"),
-        #         "vocabulary": result.get("lexical_resource", "N/A"),
-        #         "relevance": result.get("relevance", "N/A"),
-        #         "transcription": result.get("transcription", "N/A"),
-        #         "pause_filler": result.get("pause_filler", {}),
-        #         "sentences": [
-        #             {
-        #                 "sentence": sentence.get("sentence", ""),
-        #                 "pronunciation": sentence.get("pronunciation", "N/A"),
-        #                 "grammar": sentence.get("grammar", {}).get("corrected", "")
-        #             }
-        #             for sentence in result.get("sentences", [])
-        #         ]
-        #     }
+        if 'result' in response_json:
+            result = response_json['result']
+            scores = {
+                "overall": result.get("overall", 0),
+                "pronunciation": result.get("pronunciation", 0),
+                "fluency": result.get("fluency_coherence", 0),
+                "grammar": result.get("grammar", 0),
+                "vocabulary": result.get("lexical_resource", 0),
+                "relevance": result.get("relevance", 0),
+                "transcription": result.get("transcription", 0),
+                # "pause_filler": result.get("pause_filler", {}),
+                "sentences": [
+                    {
+                        "sentence": sentence.get("sentence", ""),
+                        "pronunciation": sentence.get("pronunciation", "N/A"),
+                        "grammar": sentence.get("grammar", {}).get("corrected", "")
+                    }
+                    for sentence in result.get("sentences", [])
+                ]
+            }
         
-        # os.remove(filename)
-        # # print(analysis_data)
-        # return scores
-        processed_scores = {
-            "overall": scores['ielts_score']['overall'],
-            "pronunciation": scores['ielts_score']['pronunciation'],
-            "fluency": scores['ielts_score']['fluency'],
-            "grammar": scores['ielts_score']['grammar'],
-            "vocabulary": scores['ielts_score']['vocabulary'],
-            "relevance": scores['relevance']['class'],
-            "transcription": scores['transcription'],
-            # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
-        }
-
-        # Add word-level details to the processed_scores
-        # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
-
-        # Clean up the temporary file
         os.remove(filename)
-        # print(processed_scores)
-        return processed_scores
+        # print(analysis_data)
+        return scores
+        # processed_scores = {
+        #     "overall": scores['ielts_score']['overall'],
+        #     "pronunciation": scores['ielts_score']['pronunciation'],
+        #     "fluency": scores['ielts_score']['fluency'],
+        #     "grammar": scores['ielts_score']['grammar'],
+        #     "vocabulary": scores['ielts_score']['vocabulary'],
+        #     "relevance": scores['relevance']['class'],
+        #     "transcription": scores['transcription'],
+        #     # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
+        # }
+
+        # # Add word-level details to the processed_scores
+        # # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
+
+        # # Clean up the temporary file
+        # # os.remove(filename)
+        # # print(processed_scores)
+        # return processed_scores
     except Exception as e:
         print(f"Error assessing speech: {str(e)}")
         return None
-async def generate_typical_answers(questions, answers):
-    try:
-        prompt = "Provide typical answers for the following IELTS speaking questions and user answers:\n\n"
-        for i in range(len(questions)):
-            prompt += f"Question {i+1}: {questions[i]}\nUser Answer: {answers[i]}\n\n"
-        
-        prompt += "Provide a typical answer for each question based on the user's response. Each typical answer should be presented below the original answer. These responses are from a user who was answering the IELTS Speaking test, and the typical answers should be of high quality to help the user improve for the next time. Please only include the structured format of: 1- Question, 2- Answer, 3- Typical Answer. Do not include any other text except what has been specified."
-
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": ""},
-                {"role": "user", "content": prompt}
-            ],
-            model="llama3-70b-8192",
-        )
-        result = chat_completion.choices[0].message.content
-        # Remove Markdown formatting characters using regular expressions
-        result = re.sub(r'\*', '', result)  # Remove asterisks (*)
-        result = re.sub(r'#', '', result)  # Remove hash symbols (#)
-        return result
-    except Exception as e:
-        print("Groq error switching to perplexity",e)
-        messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        ""
-                       
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        prompt
-                    ),
-                },
-            ]
-        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
-        response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
-            messages=messages
-        )
-        
-        # print(response.choices[0].message.content)
-        result = (response.choices[0].message.content)
-        result = re.sub(r'\*', '', result)  # Remove asterisks (*)
-        result = re.sub(r'#', '', result)  # Remove hash symbols (#)
-        # print("feadback report generated")
-        return result
-async def display_feedback(update, context, overall_avg, pronunciation_avg, fluency_avg, grammar_avg, vocabulary_avg):
-    try:
-        # Create a radar chart for visualization
-        labels = ['IELTS Score', 'Pronunciation', 'Fluency', 'Grammar', 'Vocabulary']
-        scores = [overall_avg, pronunciation_avg, fluency_avg, grammar_avg, vocabulary_avg]
-        
-        angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False)
-        scores.append(scores[0])
-        angles = np.append(angles, angles[0])
-        labels.append(labels[0])  # Append the first label to close the radar chart
-        
-        fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
-        
-        # Define colors and shapes for each skill
-        colors = ['#005C9E', '#ff7f0e', '#009F00', '#C50404', '#41007D']
-        shapes = ['o', 'o', 'o', 'o', 'o']
-        
-        # Plot each skill with a different color and shape
-        for i in range(len(labels) - 1):
-            ax.plot(angles[i:i + 2], scores[i:i + 2], marker=shapes[i], linestyle='', markersize=6, color=colors[i], label=labels[i])
-        
-        ax.fill(angles, scores, alpha=0.25)  # Adjust the alpha value to set the desired transparency
-        ax.set_thetagrids(angles * 180 / np.pi, labels)
-        ax.set_ylim(0, 9)
-        ax.grid(True)
-        
-        # Create a legend with the scores and shapes
-        legend_elements = [Line2D([0], [0], color=colors[i], marker=shapes[i], linestyle='None', markersize=6, label=f"{labels[i]}: {scores[i]:.1f}") for i in range(len(labels) - 1)]
-        ax.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.3, 1.0))
-        
-        # Save the plot as an image
-        plt.savefig('feedback.png', bbox_inches='tight')
-        
-        # Send the image to the user
-        with open('feedback.png', 'rb') as photo:
-            await context.bot.send_photo(chat_id=update.effective_chat.id, photo=photo)
-    except Exception as e:
-        print("dispaly feedback function ",e)
-        # await update.message.reply_text(issue_message)
-        await error_handling(update, context)
-async def generate_feedback(scores_list, questions, answers, overall_avg):
-    try:
-        prompt = "Provide detailed feedback for the following IELTS speaking assessment for Part 1:\n\n"
-        for i in range(len(questions)):
-            prompt += f"Question {i+1}: {questions[i]}\n"
-            prompt += f"Transcription of user answer: {answers[i]}\n\n"
-            prompt += f"Pronunciation score: {scores_list[i]['pronunciation']}\n"
-            prompt += f"Fluency score: {scores_list[i]['fluency']}\n"
-            prompt += f"Grammar score: {scores_list[i]['grammar']}\n"
-            prompt += f"Vocabulary score: {scores_list[i]['vocabulary']}\n"
-            # prompt += f"Fillers: {scores_list[i]['pause_filler']}\n"
-            # prompt += "Sentences of the answer (here is a detailed summary of the sentences in the answer):\n"
-            # for sentence in scores_list[i]['sentences']:
-            #     prompt += f"  - Sentence: {sentence['sentence']}\n"
-            #     prompt += f"    Pronunciation of the sentence: {sentence['pronunciation']}\n"
-            #     prompt += f"    Grammar Correction if mistakes exist: {sentence['grammar']}\n"
-            # prompt += "\n"
-        # prompt += f"Provide an overall feedback report on the user's performance, including pronunciation, fluency, grammar, and vocabulary etc. and here are the ielts speaking band score of part 1 {overall_avg} you should provide a clear and good feedback to the IELTS Candidate he expects to kmow his mistakes and improve next time and  best tips and suggetions to  get hisa imed score {targeted_score}"
-        prompt += f"""
-            Please provide a detailed feedback report on the user's performance in Part 1 of the IELTS speaking test, covering aspects such as pronunciation, fluency and coherence, grammatical range and accuracy, lexical resource (vocabulary), interactive communication, and overall performance. Offer specific examples, constructive feedback, and practical suggestions for each aspect to help the candidate identify their strengths and weaknesses. Emphasize the importance of continuous practice, active listening, and critical thinking to enhance their performance and provide language learning strategies. Encourage the candidate to reflect on their performance and set achievable goals for their IELTS speaking development. Your feedback should be supportive and encouraging, aiming to motivate the candidate in their IELTS speaking journey. Organize the feedback in a clear and structured manner, using headings and bullet points for easy readability and do not  write any non-needed text.
-
-            1. Pronunciation:
-            - Clarity and intelligibility
-            - Stress, rhythm, and intonation
-            - Individual sounds and phonemes
-            - Areas for improvement and specific examples
-
-            2. Fluency and Coherence:
-            - Smooth flow of speech
-            - Hesitation, repetition, and self-correction
-            - Logical sequencing of ideas
-            - Cohesive devices and discourse markers
-            - Suggestions for enhancing fluency
-
-            3. Lexical Resource (Vocabulary):
-            - Range and variety of vocabulary
-            - Accuracy and appropriacy of word choice
-            - Idiomatic language and collocation
-            - Recommendations for expanding vocabulary
-
-            4. Grammatical Range and Accuracy:
-            - Variety and complexity of grammatical structures
-            - Accuracy and control of grammar
-            - Errors and their impact on clarity
-            - Tips for improving grammatical accuracy
-
-            5. Overall Performance:
-            - Here is the list of all overall scores of speaking skills with the overall IELTS band score of Part 1 {overall_avg} 
-            - Strengths and weaknesses
-            - Comparison to the target score of {targeted_score}
-            - Actionable steps to bridge the gap and achieve the desired score
-
-            Please provide specific examples, constructive feedback, and practical suggestions throughout the report to help the candidate identify areas for improvement and work towards their target score. Use a friendly and encouraging tone to motivate the candidate in their IELTS speaking journey.
-            """
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": ""},
-                {"role": "user", "content": prompt}
-            ],
-            model="llama3-70b-8192",
-        )
-        result = chat_completion.choices[0].message.content
-        result = re.sub(r'\*', '', result)  # Remove asterisks (*)
-        result = re.sub(r'#', '', result)  # Remove hash symbols (#)
-        print("feadback report generated")
-        return result
-    except Exception as e:
-        print("Groq error switching to perplexity",e)
-        messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        ""
-                       
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        prompt
-                    ),
-                },
-            ]
-        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
-        response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
-            messages=messages
-        )
-        
-        # print(response.choices[0].message.content)
-        result = (response.choices[0].message.content)
-        result = re.sub(r'\*', '', result)  # Remove asterisks (*)
-        result = re.sub(r'#', '', result)  # Remove hash symbols (#)
-        print("feadback report generated")
-        return result
 async def generate_feedback2(scores_list, questions, answers,overall_score):
     try:
         # prompt = "Provide detailed feedback for the following IELTS speaking assessment:\n\n"
@@ -3149,7 +3561,7 @@ async def generate_feedback2(scores_list, questions, answers,overall_score):
                 {"role": "system", "content": ""},
                 {"role": "user", "content": prompt}
             ],
-            model="llama3-70b-8192",
+            model=groq_model,
         )
         result = chat_completion.choices[0].message.content
         result = re.sub(r'\*', '', result)  # Remove asterisks (*)
@@ -3185,76 +3597,164 @@ async def generate_feedback2(scores_list, questions, answers,overall_score):
         result = re.sub(r'#', '', result)  # Remove hash symbols (#)
         print("feadback report generated")
         return result
-
-
-
-async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_result2(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        detailed_feedback = []
-        global questions_list, answers_list, analysis_list
-        for i in range(len(questions_list)):
-            question = questions_list[i]
-            user_answer = answers_list[i]
-            analysis_data = analysis_list[i]
-            user_voice_url = voice_urls[i]
-            # print(user_voice_url)
-            prompt = f"Question: {question}\nUser Answer: {user_answer}\nAnalysis Data: {analysis_data}\n\n"
-            prompt += """Please provide a detailed analysis of the user's answer, considering the pronunciation, fluency, grammar, vocabulary, and relevance. Generate useful feedback that helps the user understand their performance in depth.
-            you should orginze it in a clear and good feedback to the IELTS Candidate he expects to kmow his mistakes and improve next time also it is a good idea to write the quetion in the feedback and the answer and then start your analysis
+        print("-----------------------FEEDBACK PART 2------------------------")
+        global part2_voice_urls
+        analysis_data = analysis2_list
+        # print("Voice URLs:", part2_voice_urls)
+        print("user_targetes_score: ",targeted_score)
+        # Send the sticker and waiting message after sending typical answers
+        animated_emoji = "⏳"  # Hourglass emoji
+        waiting_message = await context.bot.send_message(chat_id=update.effective_chat.id, text=animated_emoji)
+        # await context.bot.send_message(chat_id=update.effective_chat.id, text="Please wait a few minutes until result is ready.")
+        
+        progress_message = await context.bot.send_message(chat_id=update.effective_chat.id, text="Wait a few minutes until results are ready...\n\n[                             ] 0%")
+
+        # Send a message asking the user to share the bot
+        share_message = (
+            f"Discover this IELTS Speaking  Bot! It simulates the IELTS speaking test and provides detailed feedback about your speaking skills and estimated IELTS band score. to help you improve. Try it for free now: https://t.me/ielts_speakingAI_bot"
+        )
+        keyboard = [
+            [InlineKeyboardButton("Share the Bot", switch_inline_query=share_message)]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        share_message = await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="while waiting the results. Would you like to share this bot? 😊",
+            reply_markup=reply_markup,
+            parse_mode='HTML'
+        )
+
+        # Define the steps of the processing
+        steps = [
+            "Transcribing answers...",
+            "Analyzing responses...",
+            "Generating feedback...",
+            "Compiling results..."
+        ]
+
+        total_steps = len(steps) + len(mock_part1_questions) + len(mock_part3_questions) + 1  # +1 for Part 2 assessment
+        current_step = 0
+
+        def update_progress():
+            nonlocal current_step
+            current_step += 1
+            progress = int((current_step / total_steps) * 100)
+            progress_bar = "[" + "█" * (progress // 5) + " " * (20 - (progress // 5)) + "]"
+            return progress, progress_bar
+    
+    
+    
+    
+    
+    
+        scores2_list = []
+        assessment_tasks = []
+        
+        for i in range(len(part2_questions)):
+            audio_url = part2_voice_urls[i]
+            question_prompt = part2_questions[i]
+            task_type = "ielts_part2"  # Change as needed
             
-            """
+            assessment_task = asyncio.create_task(assess_part2_speech_async(audio_url, question_prompt, task_type))
+            assessment_tasks.append(assessment_task)
+            # print("assessment_task: ",assessment_task)
+            # Update progress
+            progress, progress_bar = update_progress()
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=progress_message.message_id,
+                text=f"Wait a few minutes until results are ready...\n{progress_bar} {progress}%"
+            )
+        # Wait for all assessment tasks to complete
+        scores_results = await asyncio.gather(*assessment_tasks)
+        # print("scores_results ",scores_results)
+        for i, scores in enumerate(scores_results):
+            if scores:
+                scores2_list.append(scores)
+                # print("scores ",scores)
+                print(f"Assessment successful for question {i+1}")
+            else:
+                print(f"Assessment failed for question {i+1}")
+        
+        if scores2_list:
+            # print(scores2_list)
+            # Delete the waiting message (sticker)
+            # await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
             
-            feedback = await generate_feedback_with_llm(prompt)
-            detailed_feedback.append(feedback)
-            detailed_feedback_list.append(feedback)
-            # await context.bot.send_message(chat_id=update.effective_chat.id, text=feedback)
-            await send_long_message(update, context, feedback)
-            # Generate and send the pronunciation visualization image
-            generate_pronunciation_visualization(analysis_data)
-            with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
-                await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
-            # Send a message to compare pronunciation
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="Now, let's compare your pronunciation with a native speaker's pronunciation.")
+            #Get the scores from the assessment results
+            overall_score = scores2_list[0].get("overall", 0)
+            pronunciation_score = scores2_list[0].get("pronunciation", 0)
+            fluency_score = scores2_list[0].get("fluency", 0)
+            grammar_score = scores2_list[0].get("grammar", 0)
+            vocabulary_score = scores2_list[0].get("vocabulary", 0)
+             # Round the scores to the nearest 0.5
+            overall_score = round_to_ielts_score(overall_score)
+            pronunciation_score = round_to_ielts_score(pronunciation_score)
+            fluency_score = round_to_ielts_score(fluency_score)
+            grammar_score = round_to_ielts_score(grammar_score)
+            vocabulary_score = round_to_ielts_score(vocabulary_score)
+            # Generate feedback report
+            feedback2_report = await generate_feedback2(scores2_list, part2_questions, part2_answers, overall_score)
+            context.user_data[f'{userID}overall_part2_feedback'] = feedback2_report
+            # Send feedback report
+            # Update progress
+            progress, progress_bar = update_progress()
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=progress_message.message_id,
+                # text=f"Wait a few minutes until results are ready...\n{progress_bar} {progress}%"
+                text=f"Wait a few minutes until results are ready...\n{progress_bar} 100%"
+            )
+            # Delete the waiting message and the share message
+            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=progress_message.message_id)
+            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=share_message.message_id)
+            await context.bot.delete_message(chat_id=update.effective_chat.id,message_id=waiting_message.message_id)
+            await send_long_message(update, context, feedback2_report)
+            # audio_file_path = await convert_text_to_audio(feedback2_report)
+                        
+            # with open(audio_file_path, 'rb') as audio:
+            #         await update.effective_message.reply_voice(voice=audio)
+            #
+           
             
-            # Download the voice file from the URL
-            response = requests.get(user_voice_url)
-            voice_filename = f"user_voice_{i}.oga"
-            with open(voice_filename, "wb") as file:
-                file.write(response.content)
+            # Display feedback visualization
+            await display_feedback(update, context, overall_score, pronunciation_score, fluency_score, grammar_score, vocabulary_score)
             
-            # Send user's original voice
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="Your Voice:")
-            with open(voice_filename, "rb") as user_voice_file:
-                await context.bot.send_voice(chat_id=update.effective_chat.id, voice=user_voice_file)
+            # Send the band score as text
+            band_score = f"Your estimated IELTS band score for Part 2 is: {overall_score:.1f}"
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=band_score)
             
-            # Delete the user's voice file from disk
-            os.remove(voice_filename)
-            await asyncio.sleep(2)
-            # Generate native speaker's audio with slow speed
-            slow_audio_path = await convert_answer_to_audio(user_answer, speed='-0.56')
+            # Get the CEFR level based on the IELTS score
+            cefr_level = get_cefr_level(overall_score)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Your language level is: {cefr_level}")
+            await append_speaking_score(update,context,"part2", overall_score)
+            await increment_practice_count(update, context)
+            # generate_pronunciation_visualization(analysis_data)
+            # with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
+            #     await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
+            # Provide user options
+            keyboard = [
+                [InlineKeyboardButton("Continue to Part 3", callback_data='continue_part3')],
+                [InlineKeyboardButton("See Detailed Results", callback_data='detailed2_results')],
+                [InlineKeyboardButton("Translate", callback_data='translate_overall2_feedback')],
+                [InlineKeyboardButton("Retake Part 2", callback_data='retake_part2')],
+                [InlineKeyboardButton("End the Test", callback_data='end_test')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="What would you like to do next?", reply_markup=reply_markup)
             
-            # Send native speaker's audio with slow speed
-            with open(slow_audio_path, 'rb') as slow_audio_file:
-                await context.bot.send_message(chat_id=update.effective_chat.id, text="Native Speaker's Voice (Slow Speed):")
-                await context.bot.send_voice(chat_id=update.effective_chat.id, voice=slow_audio_file)
-            os.remove(slow_audio_path)
-            await asyncio.sleep(2)
-            # Generate native speaker's audio with normal speed
-            normal_audio_path = await convert_answer_to_audio(user_answer, speed='0')
-            
-            # Send native speaker's audio with normal speed
-            with open(normal_audio_path, 'rb') as normal_audio_file:
-                await context.bot.send_message(chat_id=update.effective_chat.id, text="Native Speaker's Voice (Normal Speed):")
-                await context.bot.send_voice(chat_id=update.effective_chat.id, voice=normal_audio_file)
-            os.remove(normal_audio_path)
-            # Send a message to encourage comparison
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="Listen to your voice and compare it with the native speaker's pronunciation at both speeds.")
-        return detailed_feedback
+            # Clear the lists after the feedback is completed
+            # voice_urls.clear()
+            # questions_list.clear()
+            # answers_list.clear()
+        else:
+            await update.callback_query.message.reply_text("Failed to assess the answers. Please try again.")
     except Exception as e:
-        print("generate detailed feedback part 1 function ",e)
+        print("show results part 2",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
 async def generate_detailed2_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         detailed_feedback = []
@@ -3278,7 +3778,7 @@ async def generate_detailed2_feedback(update: Update, context: ContextTypes.DEFA
             # await context.bot.send_message(chat_id=update.effective_chat.id, text=feedback)
             await send_long_message(update, context, feedback)
             # Generate and send the pronunciation visualization image
-            generate_pronunciation_visualization(analysis_data)
+            generate_pronunciation_visualization2(analysis_data)
             with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
                 await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
             # Send a message to compare pronunciation
@@ -3328,9 +3828,10 @@ async def generate_detailed2_feedback(update: Update, context: ContextTypes.DEFA
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
 
-def generate_pronunciation_visualization(answer_data):
+def generate_pronunciation_visualization2(answer_data):
     try:
-        # Extract the word pronunciation details from the answer data
+        # Extract the sentences and word pronunciation details from the answer data
+        sentences = answer_data['scores']['sentences']
         word_pronunciation_details = answer_data['word_pronunciation_details']
         
         # Define colors for pronunciation scores
@@ -3362,15 +3863,20 @@ def generate_pronunciation_visualization(answer_data):
         
         total_height = y + padding  # Start with the initial padding
         
-        for word_info in word_pronunciation_details:
-            word = word_info['word']
-            word_width, word_height = draw.textbbox((0, 0), word, font=text_font)[2:]
+        for sentence_details in word_pronunciation_details:
+            x = padding  # Starting x position for each sentence
+            for word_info in sentence_details:
+                word = word_info['word']
+                word_width, word_height = draw.textbbox((0, 0), word, font=text_font)[2:]
+                
+                # Check if word fits in the current line, if not move to the next line
+                if x + word_width > max_line_width:
+                    x = padding
+                    y += word_height + 10
+                
+                x += word_width + 10
             
-            # Check if word fits in the current line, if not move to the next line
-            if y + word_width > max_line_width:
-                y += word_height + 10
-            
-            y += word_height + 10
+            y += word_height + 20  # Increase y position for next sentence
         
         # Add space for the guide
         total_height = y + word_height + 50  # Extra space for the guide
@@ -3386,29 +3892,32 @@ def generate_pronunciation_visualization(answer_data):
         title_y = padding
         draw.text((title_x, title_y), title, font=title_font, fill=(0, 0, 0))
         
-        # Draw words with color coding
+        # Draw sentences and colored words with word wrapping
         y = title_y + title_height + 40
-        x = padding
-        for word_info in word_pronunciation_details:
-            word = word_info['word']
-            score = float(word_info['pronunciation'])  # Ensure score is a float
+        for sentence, sentence_details in zip(sentences, word_pronunciation_details):
+            x = padding  # Starting x position for each sentence
+            for word_info in sentence_details:
+                word = word_info['word']
+                score = word_info['pronunciation']
+                
+                if score >= 80:
+                    color = colors['Correct Pronunciation +80/100']
+                elif score >= 50:
+                    color = colors['Slightly Incorrect Pronunciation +50/100']
+                else:
+                    color = colors['Incorrect Pronunciation -50/100']
+                
+                word_width, word_height = draw.textbbox((0, 0), word, font=text_font)[2:]
+                
+                # Check if word fits in the current line, if not move to the next line
+                if x + word_width > max_line_width:
+                    x = padding
+                    y += word_height + 10
+                
+                draw.text((x, y), word, font=text_font, fill=color)
+                x += word_width + 10
             
-            if score >= 80:
-                color = colors['Correct Pronunciation +80/100']
-            elif score >= 50:
-                color = colors['Slightly Incorrect Pronunciation +50/100']
-            else:
-                color = colors['Incorrect Pronunciation -50/100']
-            
-            word_width, word_height = draw.textbbox((0, 0), word, font=text_font)[2:]
-            
-            # Check if word fits in the current line, if not move to the next line
-            if x + word_width > max_line_width:
-                x = padding
-                y += word_height + 10
-            
-            draw.text((x, y), word, font=text_font, fill=color)
-            x += word_width + 10
+            y += word_height + 20  # Increase y position for next sentence
         
         # Draw color guide
         guide_x = padding
@@ -3425,241 +3934,11 @@ def generate_pronunciation_visualization(answer_data):
         # Save the image to a file or send it directly to the user
         image.save('pronunciation_visualization_with_padding.png')
     except Exception as e:
-        print("generate pronunciation visualization function ", e)
+        print("generate pronunciation visulization function ",e)
         # await update.message.reply_text(issue_message)
-async def convert_answer_to_audio(user_answer, speed):
-    global  examiner_voice
-    if examiner_voice== "":
-            examiner_voice = "Liv" 
 
-    try:
-        response = requests.post(
-            'https://api.v6.unrealspeech.com/stream',
-            headers={
-                'Authorization': unreal_speech_API1
-            },
-            json={
-                'Text': user_answer,
-                'VoiceId': examiner_voice,
-                'Bitrate': '64k',
-                'Speed': speed,
-                'Pitch': '1',
-                'Codec': 'libmp3lame',
-            }
-        )
-
-        if response.status_code == 200:
-            # Generate a unique filename for the audio file
-            audio_filename = f"user_audio_{int(time.time())}.mp3"
-
-            # Save the audio content to a file
-            with open(audio_filename, 'wb') as f:
-                f.write(response.content)
-
-            return audio_filename
-        else:
-            print(f"Error converting answer to audio. Status code: {response.status_code}")
-            return ""  # Return an empty string instead of None
-
-    except Exception as e:
-        # global  examiner_voice
-        if examiner_voice== "":
-                examiner_voice = "Liv" 
-
-        
-        response = requests.post(
-                'https://api.v6.unrealspeech.com/stream',
-                headers={
-                    'Authorization': unreal_speech_API2
-                },
-                json={
-                    'Text': user_answer,
-                    'VoiceId': examiner_voice,
-                    'Bitrate': '64k',
-                    'Speed': speed,
-                    'Pitch': '1',
-                    'Codec': 'libmp3lame',
-                }
-            )
-
-        if response.status_code == 200:
-                # Generate a unique filename for the audio file
-            audio_filename = f"user_audio_{int(time.time())}.mp3"
-
-                # Save the audio content to a file
-            with open(audio_filename, 'wb') as f:
-                f.write(response.content)
-
-            return audio_filename
-        else:
-            print(f"Error converting answer to audio. Status code: {response.status_code}")
-            return ""  # Return an empty string instead of None
-
-
-    
-async def generate_feedback_with_llm(prompt):
-    # Use the LLM to generate the detailed feedback based on the prompt
-    # You can integrate with your chosen LLM service here
-    # Example:
-    try:
-        chat_completion = groq_client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": ""},
-                {"role": "user", "content": prompt}
-            ],
-            model="llama3-70b-8192",
-        )
-        feedback = chat_completion.choices[0].message.content
-        feedback = re.sub(r'\*', '', feedback)  # Remove asterisks (*)
-        feedback = re.sub(r'#', '', feedback)  # Remove hash symbols (#)
-        return feedback
-    except Exception as e:
-        print("Groq error switching to perplexity",e)
-        messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        ""
-                       
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        prompt
-                    ),
-                },
-            ]
-        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
-        response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
-            messages=messages
-        )
-        
-        # print(response.choices[0].message.content)
-        feedback = (response.choices[0].message.content)
-        feedback = re.sub(r'\*', '', feedback)  # Remove asterisks (*)
-        feedback = re.sub(r'#', '', feedback)  # Remove hash symbols (#)
-        return feedback
-async def translate_feedback(user_id, feedback, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        # Retrieve the user's native language from the database
-        user = supabase.table('ielts_speaking_users').select('native_language').eq('user_id', user_id).execute()
-        # print(user)
-        native_language = user.data[0]['native_language']
-        print("language ",native_language)
-        
-        # Use the Gemini API to translate the feedback into the user's native language
-        # genai.configure(api_key=Gemini_API_Key)
-        pro =  'gemini-1.5-pro'
-        flash = 'gemini-1.5-flash'
-        
-        model_type =  [pro, flash]
-        # prompt = f"Translate the following text from English to {native_language}:\n\n{feedback}"
-        prompt = f"""
-            Translate the provided IELTS evaluation of speaking test text from english into {native_language}. Ensure that the translation is accurate, contextually appropriate, and adheres to the linguistic standards of {native_language}.
-            Instructions:
-
-            1- Content Focus: Only include the evaluation text. Exclude any non-evaluative content to maintain the focus on the assessment aspects of the text.
-            2- Rearrange the text to align with the typical format and flow of {native_language}, while preserving the original order and organization of content.
-            3- Language Specifics:
-            - You should translate based on the required context. If the context requires any word or sentence to remain in English, leave it in English for grammar or pronunciation or any place in the text it always be between two ("") and make them inside the qoutes (""). Be cautious when you encounter this.
-            - Adjust the sentence structure and phrasing to fit the grammatical and stylistic norms of {native_language}, ensuring that the translation reads naturally to native speakers.
-            4- Accuracy and Contextual Integrity:
-            -Carefully maintain the original context and meaning of the evaluation text during translation.
-            - Ensure that all translated terms and phrases are appropriate for the context and do not alter the evaluative tone or content. 
-            
-            the evaluation text that needed to translates is:\n\n
-            {feedback}
-        """
-        supported_languages = [
-        "English", "Español", "Français", "Deutsch", "Italiano", "Português", "Русский", "日本語", "한국어", "中文",
-        "العربية", "हिन्दी", "বাংলা", "ਪੰਜਾਬੀ", "Tiếng Việt", "Türkçe",
-        "Polski", "Українська", "Nederlands", "Ελληνικά", "Svenska", "Norsk", "Dansk", "Suomi", "Čeština", "Română",
-        "Magyar", "Српски", "Hrvatski", "Български", "Lietuvių", "Latviešu", "Eesti", "Slovenščina", "Slovenčina",
-        "Kiswahili", "Bahasa Indonesia",
-        "ภาษาไทย",  "Монгол хэл", "English",
-        "Spanish",
-        "French",
-        "German",
-        "Italian",
-        "Portuguese",
-        "Russian",
-        "Japanese",
-        "Korean",
-        "Chinese",
-        "Arabic",
-        "Hindi",
-        "Bengali",
-        "Punjabi",
-        "Vietnamese",
-        "Turkish",
-        "Polish",
-        "Ukrainian",
-        "Dutch",
-        "Greek",
-        "Swedish",
-        "Norwegian",
-        "Danish",
-        "Finnish",
-        "Czech",
-        "Romanian",
-        "Hungarian",
-        "Serbian",
-        "Croatian",
-        "Bulgarian",
-        "Lithuanian",
-        "Latvian",
-        "Estonian",
-        "Slovenian",
-        "Slovak",
-        "Swahili",
-        "Indonesian",
-        "Thai",
-        "Mongolian",
-        "Hebrew"
-        "עברית"  , 
-        
-    ]
-        max_retries = 3
-        retry_count = 0
-        if native_language in supported_languages:
-            # Use the Gemini API to translate the feedback into the user's native language
-            while retry_count < max_retries:
-                try:
-                    used_key = random.choice(keys)
-                    used_model = random.choice(model_type)
-                    print("used model ",used_model)
-                    genai.configure(api_key=used_key)
-                    model = genai.GenerativeModel(used_model)
-                    # prompt = f"Translate the following text from English to {native_language}:\n\n{feedback}"
-                    response = model.generate_content(prompt)
-                    response.resolve()
-                    translated_feedback = response.text
-                    translated_feedback = re.sub(r'\*', '', translated_feedback)  # Remove asterisks (*)
-                    translated_feedback = re.sub(r'#', '', translated_feedback)  # Remove hash symbols (#)
-                    return translated_feedback
-                except Exception as e:  
-                    retry_count += 1
-                    print(f"Translation error occurred: {str(e)}. Retrying ({retry_count}/{max_retries})...")
-                # If the maximum number of retries is reached, send a failure message to the user
-            # await context.bot.send_message(chat_id=update.effective_chat.id, text="Sorry, the translation service is currently unavailable. Please try again later.")
-            keyboard = [
-            # [InlineKeyboardButton("Continue to Part 2", callback_data='continue_part_2')],
-            # [InlineKeyboardButton("Retake Part 1", callback_data='retake_part_1')],
-            [InlineKeyboardButton("End the Test", callback_data='end_test')]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="Sorry, the translation service is currently unavailable. Please try again later.", reply_markup=reply_markup)
-        
-        else:
-            # Return None to indicate that translation is not available
-            return None
-    except Exception as e:
-        print("translate feedback",e)
-        # await update.message.reply_text(issue_message)
-        await error_handling(update, context)
-async def start_part2_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_part2_test(update: Update, context: ContextTypes.DEFAULT_TYPE):     
+    # global test_stop
     try:
         # Randomly select a question from the list of Part 2 questions
         # question = random.choice(questions_part2)
@@ -3699,13 +3978,26 @@ async def start_part2_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Start a countdown timer for 1 minute
         countdown_message = await context.bot.send_message(chat_id=update.effective_chat.id, text="60 seconds remaining...")
-
+        
+        # for remaining in range(59, 0, -1): 
+        #     if test_stop==False:
+        #         await asyncio.sleep(1)
+        #         try:
+        #             await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=countdown_message.message_id, text=f"{remaining} seconds remaining...")
+        #         except Exception as e:
+        #             print(f"Failed to update countdown message: {e}")
+        #     else:
+        #         print(test_stop)
         for remaining in range(59, 0, -1):
-            await asyncio.sleep(1)
-            try:
-                await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=countdown_message.message_id, text=f"{remaining} seconds remaining...")
-            except Exception as e:
-                print(f"Failed to update countdown message: {e}")
+            if test_stop:
+                print(test_stop)
+                break
+            else:
+                await asyncio.sleep(1)
+                try:
+                    await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=countdown_message.message_id, text=f"{remaining} seconds remaining...")
+                except Exception as e:
+                    print(f"Failed to update countdown message: {e}")
 
         # Delete the countdown message and hourglass emoji
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
@@ -3725,7 +4017,7 @@ async def start_part2_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
 
-
+#----------------------------- Part 3 --------------------------
 async def start_part3_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print("start part 3 test")
     try:
@@ -3835,57 +4127,62 @@ async def assess_part3_speech_async(audio_url, question_prompt, task_type):
         with open(filename, "wb") as file:
             file.write(response.content)
         
-        # Assess the speech using the existing assess_speech function
-        scores, analysis_data = assess_speech(filename, question_prompt, task_type)
-        # response_json = scores  # Assuming assess_speech returns the JSON response directly
-        analysis3_list.append(analysis_data)
-        # print(analysis_data)
-        # print('\n\nanalysis_data added succussfuly')
-        # if 'result' in response_json:
-        #     result = response_json['result']
-        #     scores = {
-        #         "overall": result.get("overall", "N/A"),
-        #         "pronunciation": result.get("pronunciation", "N/A"),
-        #         "fluency": result.get("fluency_coherence", "N/A"),
-        #         "grammar": result.get("grammar", "N/A"),
-        #         "vocabulary": result.get("lexical_resource", "N/A"),
-        #         "relevance": result.get("relevance", "N/A"),
-        #         "transcription": result.get("transcription", "N/A"),
-        #         "pause_filler": result.get("pause_filler", {}),
-        #         "sentences": [
-        #             {
-        #                 "sentence": sentence.get("sentence", ""),
-        #                 "pronunciation": sentence.get("pronunciation", "N/A"),
-        #                 "grammar": sentence.get("grammar", {}).get("corrected", "")
-        #             }
-        #             for sentence in result.get("sentences", [])
-        #         ]
-        #     }
-        
-        # os.remove(filename)
-        # return scores
-        processed_scores = {
-            "overall": scores['ielts_score']['overall'],
-            "pronunciation": scores['ielts_score']['pronunciation'],
-            "fluency": scores['ielts_score']['fluency'],
-            "grammar": scores['ielts_score']['grammar'],
-            "vocabulary": scores['ielts_score']['vocabulary'],
-            "relevance": scores['relevance']['class'],
-            "transcription": scores['transcription'],
-            # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
-        }
+        if part_3_minute:
+            print("use speech super API (part 3)")
+            # Assess the speech using the existing assess_speech function
+            scores, analysis_data = assess_speech2(filename, question_prompt,task_type)
+            response_json = scores  # Assuming assess_speech returns the JSON response directly
+            analysis3_list.append(analysis_data)
+            # print(analysis_data)
+            # print('\n\nanalysis_data added succussfuly')
+            if 'result' in response_json:
+                result = response_json['result']
+                scores = {
+                    "overall": result.get("overall", 0),
+                    "pronunciation": result.get("pronunciation", 0),
+                    "fluency": result.get("fluency_coherence", 0),
+                    "grammar": result.get("grammar", 0),
+                    "vocabulary": result.get("lexical_resource", 0),
+                    "relevance": result.get("relevance", 0),
+                    "transcription": result.get("transcription", 0),
+                    # "pause_filler": result.get("pause_filler", {}),
+                #     "sentences": [
+                #         {
+                #             "sentence": sentence.get("sentence", ""),
+                #             "pronunciation": sentence.get("pronunciation", "N/A"),
+                #             "grammar": sentence.get("grammar", {}).get("corrected", "")
+                #         }
+                #         for sentence in result.get("sentences", [])
+                #     ]
+                }
+            
+            os.remove(filename)
+            return scores
+        else:
+            scores, analysis_data = assess_speech(filename, question_prompt)
+            # response_json = scores  # Assuming assess_speech returns the JSON response directly
+            analysis3_list.append(analysis_data)
+            processed_scores = {
+                "overall": scores['ielts_score']['overall'],
+                "pronunciation": scores['ielts_score']['pronunciation'],
+                "fluency": scores['ielts_score']['fluency'],
+                "grammar": scores['ielts_score']['grammar'],
+                "vocabulary": scores['ielts_score']['vocabulary'],
+                "relevance": scores['relevance']['class'],
+                "transcription": scores['transcription'],
+                # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
+            }
 
-        # Add word-level details to the processed_scores
-        # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
+            # Add word-level details to the processed_scores
+            # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
 
-        # Clean up the temporary file
-        os.remove(filename)
-        # print(processed_scores)
-        return processed_scores
+            # Clean up the temporary file
+            os.remove(filename)
+            # print(processed_scores)
+            return processed_scores
     except Exception as e:
         print(f"Error assessing speech: {str(e)}")
         return None
-
 async def generate_feedback3(scores_list, questions, answers, overall_avg):
     try:
         global targeted_score
@@ -3959,7 +4256,7 @@ async def generate_feedback3(scores_list, questions, answers, overall_avg):
                 {"role": "system", "content": ""},
                 {"role": "user", "content": prompt}
             ],
-            model="llama3-70b-8192",
+            model=groq_model,
         )
         result = chat_completion.choices[0].message.content
         result = re.sub(r'\*', '', result)  # Remove asterisks (*)
@@ -4022,7 +4319,10 @@ async def generate_detailed3_feedback(update: Update, context: ContextTypes.DEFA
             # await context.bot.send_message(chat_id=update.effective_chat.id, text=feedback)
             await send_long_message(update, context, feedback)
             # Generate and send the pronunciation visualization image
-            generate_pronunciation_visualization(analysis_data)
+            if part_3_minute:
+                generate_pronunciation_visualization2(analysis_data)
+            else:
+                generate_pronunciation_visualization(analysis_data)
             with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
                 await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
             
@@ -4068,7 +4368,6 @@ async def generate_detailed3_feedback(update: Update, context: ContextTypes.DEFA
         print("generate detailed feedback part 3 function  ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
 async def part3_show_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         print("-----------------------FEEDBACK PART 3------------------------")
@@ -4097,7 +4396,7 @@ async def part3_show_results(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup = InlineKeyboardMarkup(keyboard)
         share_message = await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="while waiting the results. Would you like to share this bot?",
+            text="while waiting the results. Would you like to share this bot? 😊",
             reply_markup=reply_markup,
             parse_mode='HTML'
         )
@@ -4152,12 +4451,10 @@ async def part3_show_results(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if scores_list:
             # await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
             overall_avg = sum(score["overall"] for score in scores_list) / len(scores_list)
-            # overall_score = round_to_ielts_score(overall_avg)
             pronunciation_avg = sum(score["pronunciation"] for score in scores_list) / len(scores_list)
             fluency_avg = sum(score["fluency"] for score in scores_list) / len(scores_list)
             grammar_avg = sum(score["grammar"] for score in scores_list) / len(scores_list)
             vocabulary_avg = sum(score["vocabulary"] for score in scores_list) / len(scores_list)
-            # overall_avg = (pronunciation_avg + fluency_avg + grammar_avg + vocabulary_avg) / 4
             # Round the scores to the nearest 0.5
             overall_avg = round_to_ielts_score(overall_avg)
             pronunciation_avg = round_to_ielts_score(pronunciation_avg)
@@ -4217,7 +4514,6 @@ async def part3_show_results(update: Update, context: ContextTypes.DEFAULT_TYPE)
         print("part 3 show results function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
 async def part3_detailed_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.callback_query
@@ -4241,7 +4537,6 @@ async def part3_detailed_results(update: Update, context: ContextTypes.DEFAULT_T
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
 #-----------------MOCK TEST FUNCTIONS-----------------
-
 async def start_mock_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         #--------------PART1-----------------
@@ -4326,8 +4621,10 @@ async def start_mock_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Generate initial questions for the selected topic using the Groq API
         initial_questions = await generate_questions(selected_topic)
+        # print(initial_questions)
         if not initial_questions:
-            await update.effective_message.reply_text("Failed to generate questions. Please try again.")
+            # await update.effective_message.reply_text("Failed to generate questions. Please try again.")
+            await error_handling(update,context)
             return
 
         # Store the initial questions in the mock_part1_questions list
@@ -4352,7 +4649,6 @@ async def start_mock_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("start mock test function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
 async def mock_part1_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         global list_previous_quetions
@@ -4400,7 +4696,6 @@ async def mock_part1_process(update: Update, context: ContextTypes.DEFAULT_TYPE)
         print("mock test part 1 process function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
 async def mock_part2_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Randomly select a topic from the ielts_questions dictionary
@@ -4493,9 +4788,6 @@ async def mock_part3_process(update: Update, context: ContextTypes.DEFAULT_TYPE)
         print("mock test part 3 process function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
-
-
 async def get_voice_file_path_url(voice_message: Voice):
     # try:
         # Get the file path URL of the voice message
@@ -4508,7 +4800,6 @@ async def get_voice_file_path_url(voice_message: Voice):
     #     print("get voice file path function ",e)
     #     # await update.message.reply_text(issue_message)
     #     await error_handling(update, context)
-
 async def mock_test_retake(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.callback_query
@@ -4538,7 +4829,8 @@ async def mock_test_retake(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Generate new initial questions for the selected topic using the Groq API
         initial_questions = await generate_questions(selected_topic)
         if not initial_questions:
-            await query.edit_message_text("Failed to generate questions. Please try again.")
+            # await query.edit_message_text("Failed to generate questions. Please try again.")
+            await error_handling(update, context)
             return
 
         # Store the new initial questions in the mock_part1_questions list
@@ -4583,7 +4875,6 @@ async def send_user_answers(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("send user answers function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
 async def mock_test_completed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Send a waiting message to the user
@@ -4612,11 +4903,6 @@ async def mock_test_completed(update: Update, context: ContextTypes.DEFAULT_TYPE
         print("mock test completed function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
-import asyncio
-import time
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
 async def show_mock_test_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         print("-----------------------FEEDBACK MOCK TEST------------------------")
@@ -4643,7 +4929,7 @@ async def show_mock_test_results(update: Update, context: ContextTypes.DEFAULT_T
         reply_markup = InlineKeyboardMarkup(keyboard)
         share_message = await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="while waiting the results. Would you like to share this bot?",
+            text="while waiting the results. Would you like to share this bot? 😊",
             reply_markup=reply_markup,
             parse_mode='HTML'
         )
@@ -4736,12 +5022,15 @@ async def show_mock_test_results(update: Update, context: ContextTypes.DEFAULT_T
                 print(f"Assessment successful for Part 3 question {i+1}")
             else:
                 print(f"Assessment failed for Part 3 question {i+1}")
+                
 
         if part1_scores_list and part2_scores and part3_scores_list:
             # Calculate average scores for each part
-            part1_avg_scores = calculate_average_scores(part1_scores_list)
+            len_scores1=len(part1_scores_list)
+            part1_avg_scores = calculate_average_scores(part1_scores_list, len_scores1 )
             part2_avg_scores = part2_scores  # No need to average for Part 2
-            part3_avg_scores = calculate_average_scores(part3_scores_list)
+            len_scores3=len(part3_scores_list)
+            part3_avg_scores = calculate_average_scores(part3_scores_list,len_scores3)
 
             # Calculate overall average scores
             overall_avg_scores = calculate_overall_average_scores(part1_avg_scores, part2_avg_scores, part3_avg_scores)
@@ -4755,11 +5044,11 @@ async def show_mock_test_results(update: Update, context: ContextTypes.DEFAULT_T
             mock_score = overall_avg_scores['overall']
 
             # Generate overall feedback using LLM
-            overall_mock_feedback = generate_overall_feedback(part1_scores_list, part2_scores, part3_scores_list,
+            overall_mock_feedback = await generate_overall_feedback(part1_scores_list, part2_scores, part3_scores_list,
                                                             mock_part1_questions, mock_part1_answers,
                                                             mock_part2_questions[0], mock_part2_answers[0],
                                                             mock_part3_questions, mock_part3_answers, mock_score)
-            
+            # print(overall_mock_feedback)
             context.user_data[f'{userID}overall_mock_test_feedback'] = overall_mock_feedback
             # Update progress
             progress, progress_bar = update_progress()
@@ -4774,7 +5063,11 @@ async def show_mock_test_results(update: Update, context: ContextTypes.DEFAULT_T
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=share_message.message_id)
             await context.bot.delete_message(chat_id=update.effective_chat.id,message_id=waiting_message.message_id)
             # Send overall feedback to the user
-            await send_long_message(update, context, overall_mock_feedback)
+            print(len(overall_mock_feedback))
+            try:
+                await send_long_message(update, context, overall_mock_feedback)
+            except Exception as e:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=overall_mock_feedback)
 
             # Display scores using the display_feedback function
             await display_feedback(update, context, overall_avg_scores['overall'], overall_avg_scores['pronunciation'],
@@ -4799,7 +5092,7 @@ async def show_mock_test_results(update: Update, context: ContextTypes.DEFAULT_T
             reply_markup = InlineKeyboardMarkup(keyboard)
             await context.bot.send_message(chat_id=update.effective_chat.id, text="What would you like to do next?", reply_markup=reply_markup)
         else:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="Assessment failed for one or more parts. Please try again.")
+            await error_handling(update, context)
     except Exception as e:
         print("show mock test result function ",e)
         # await update.message.reply_text(issue_message)
@@ -4816,61 +5109,65 @@ async def assess_part1_mock_async(audio_urls, question_prompts, task_type):
         # Save the downloaded file locally
         with open(filename, "wb") as file:
             file.write(response.content)
-        scores,analysis_data = assess_speech(filename, question_prompts, task_type)
-        response_json = scores  # Assuming assess_speech returns the JSON response directly
-        mock_part1_analysis_list.append(analysis_data)
-        # print(analysis_data)
-        # if 'result' in response_json:
-        #     result = response_json['result']
-        #     scores = {
-        #         "overall": result.get("overall", "N/A"),
-        #         "pronunciation": result.get("pronunciation", "N/A"),
-        #         "fluency": result.get("fluency_coherence", "N/A"),
-        #         "grammar": result.get("grammar", "N/A"),
-        #         "vocabulary": result.get("lexical_resource", "N/A"),
-        #         "relevance": result.get("relevance", "N/A"),
-        #         "transcription": result.get("transcription", "N/A"),
-        #         "pause_filler": result.get("pause_filler", {}),
-        #         "sentences": [
-        #             {
-        #                 "sentence": sentence.get("sentence", ""),
-        #                 "pronunciation": sentence.get("pronunciation", "N/A"),
-        #                 "grammar": sentence.get("grammar", {}).get("corrected", "")
-        #             }
-        #             for sentence in result.get("sentences", [])
-        #         ]
-        #     }
-        #     # analysis_list.append(scores)
-        
-        # # end_time = time.time()
-        # # execution_time = end_time - start_time
-        # # print(f"Execution time: {execution_time} seconds")
-        # os.remove(filename)
-        # # print(scores)
-        # return scores
-        processed_scores = {
-            "overall": scores['ielts_score']['overall'],
-            "pronunciation": scores['ielts_score']['pronunciation'],
-            "fluency": scores['ielts_score']['fluency'],
-            "grammar": scores['ielts_score']['grammar'],
-            "vocabulary": scores['ielts_score']['vocabulary'],
-            "relevance": scores['relevance']['class'],
-            "transcription": scores['transcription'],
-            # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
-        }
+        if part_1_minute:
+            print("use speech super API Part1 mock test")
+            scores,analysis_data = assess_speech2(filename, question_prompts,task_type)
+            response_json = scores  # Assuming assess_speech returns the JSON response directly
+            mock_part1_analysis_list.append(analysis_data)
+            # print(analysis_data)
+            if 'result' in response_json:
+                result = response_json['result']
+                scores = {
+                    "overall": result.get("overall", "N/A"),
+                    "pronunciation": result.get("pronunciation", "N/A"),
+                    "fluency": result.get("fluency_coherence", "N/A"),
+                    "grammar": result.get("grammar", "N/A"),
+                    "vocabulary": result.get("lexical_resource", "N/A"),
+                    "relevance": result.get("relevance", "N/A"),
+                    "transcription": result.get("transcription", "N/A"),
+                    # "pause_filler": result.get("pause_filler", {}),
+                    # "sentences": [
+                    #     {
+                    #         "sentence": sentence.get("sentence", ""),
+                    #         "pronunciation": sentence.get("pronunciation", "N/A"),
+                    #         "grammar": sentence.get("grammar", {}).get("corrected", "")
+                    #     }
+                    #     for sentence in result.get("sentences", [])
+                    # ]
+                }
+                # analysis_list.append(scores)
+            
+            # end_time = time.time()
+            # execution_time = end_time - start_time
+            # print(f"Execution time: {execution_time} seconds")
+            os.remove(filename)
+            # print(scores)
+            return scores
+        else:
+            scores,analysis_data = assess_speech(filename, question_prompts)
+            response_json = scores  # Assuming assess_speech returns the JSON response directly
+            mock_part1_analysis_list.append(analysis_data)
+            processed_scores = {
+                "overall": scores['ielts_score']['overall'],
+                "pronunciation": scores['ielts_score']['pronunciation'],
+                "fluency": scores['ielts_score']['fluency'],
+                "grammar": scores['ielts_score']['grammar'],
+                "vocabulary": scores['ielts_score']['vocabulary'],
+                "relevance": scores['relevance']['class'],
+                "transcription": scores['transcription'],
+                # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
+            }
 
-        # Add word-level details to the processed_scores
-        # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
+            # Add word-level details to the processed_scores
+            # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
 
-        # Clean up the temporary file
-        os.remove(filename)
-        # print(processed_scores)
-        return processed_scores
+            # Clean up the temporary file
+            os.remove(filename)
+            # print(processed_scores)
+            return processed_scores
     except Exception as e:
         print(f"Error assessing speech: {str(e)}")
         return None
-
-
 async def assess_part2_mock_async(audio_url, question_prompt, task_type):
    
     try:
@@ -4883,61 +5180,59 @@ async def assess_part2_mock_async(audio_url, question_prompt, task_type):
         # Save the downloaded file locally
         with open(filename, "wb") as file:
             file.write(response.content)
-        scores,analysis_data = assess_speech(filename, question_prompt, task_type)
+        scores,analysis_data = assess_speech2(filename, question_prompt,task_type)
         response_json = scores  # Assuming assess_speech returns the JSON response directly
         mock_part2_analysis_list.append(analysis_data)
-        # print(analysis_data)
-        # if 'result' in response_json:
-        #     result = response_json['result']
-        #     scores = {
-        #         "overall": result.get("overall", "N/A"),
-        #         "pronunciation": result.get("pronunciation", "N/A"),
-        #         "fluency": result.get("fluency_coherence", "N/A"),
-        #         "grammar": result.get("grammar", "N/A"),
-        #         "vocabulary": result.get("lexical_resource", "N/A"),
-        #         "relevance": result.get("relevance", "N/A"),
-        #         "transcription": result.get("transcription", "N/A"),
-        #         "pause_filler": result.get("pause_filler", {}),
-        #         "sentences": [
-        #             {
-        #                 "sentence": sentence.get("sentence", ""),
-        #                 "pronunciation": sentence.get("pronunciation", "N/A"),
-        #                 "grammar": sentence.get("grammar", {}).get("corrected", "")
-        #             }
-        #             for sentence in result.get("sentences", [])
-        #         ]
-        #     }
-        #     # analysis_list.append(scores)
+        # print (analysis_data)
+        if 'result' in response_json:
+            result = response_json['result']
+            scores = {
+                "overall": result.get("overall", 0),
+                "pronunciation": result.get("pronunciation", 0),
+                "fluency": result.get("fluency_coherence", 0),
+                "grammar": result.get("grammar", 0),
+                "vocabulary": result.get("lexical_resource", 0),
+                "relevance": result.get("relevance", 0),
+                "transcription": result.get("transcription", 0),
+                "pause_filler": result.get("pause_filler", {}),
+                "sentences": [
+                    {
+                        "sentence": sentence.get("sentence", ""),
+                        "pronunciation": sentence.get("pronunciation", "N/A"),
+                        "grammar": sentence.get("grammar", {}).get("corrected", "")
+                    }
+                    for sentence in result.get("sentences", [])
+                ]
+            }
+            # analysis_list.append(scores)
         
-        # # end_time = time.time()
-        # # execution_time = end_time - start_time
-        # # print(f"Execution time: {execution_time} seconds")
-        # os.remove(filename)
-        # # print(scores)
-        # return scores
-        processed_scores = {
-            "overall": scores['ielts_score']['overall'],
-            "pronunciation": scores['ielts_score']['pronunciation'],
-            "fluency": scores['ielts_score']['fluency'],
-            "grammar": scores['ielts_score']['grammar'],
-            "vocabulary": scores['ielts_score']['vocabulary'],
-            "relevance": scores['relevance']['class'],
-            "transcription": scores['transcription'],
-            # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
-        }
-
-        # Add word-level details to the processed_scores
-        # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
-
-        # Clean up the temporary file
+        # end_time = time.time()
+        # execution_time = end_time - start_time
+        # print(f"Execution time: {execution_time} seconds")
         os.remove(filename)
-        # print(processed_scores)
-        return processed_scores
+        # print(scores)
+        return scores
+        # processed_scores = {
+        #     "overall": scores['ielts_score']['overall'],
+        #     "pronunciation": scores['ielts_score']['pronunciation'],
+        #     "fluency": scores['ielts_score']['fluency'],
+        #     "grammar": scores['ielts_score']['grammar'],
+        #     "vocabulary": scores['ielts_score']['vocabulary'],
+        #     "relevance": scores['relevance']['class'],
+        #     "transcription": scores['transcription'],
+        #     # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
+        # }
+
+        # # Add word-level details to the processed_scores
+        # # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
+
+        # # Clean up the temporary file
+        # os.remove(filename)
+        # # print(processed_scores)
+        # return processed_scores
     except Exception as e:
         print(f"Error assessing speech: {str(e)}")
         return None
-
-
 async def assess_part3_mock_async(audio_urls, question_prompts, task_type):
      
     try:
@@ -4950,61 +5245,65 @@ async def assess_part3_mock_async(audio_urls, question_prompts, task_type):
         # Save the downloaded file locally
         with open(filename, "wb") as file:
             file.write(response.content)
-        scores,analysis_data = assess_speech(filename, question_prompts, task_type)
-        response_json = scores  # Assuming assess_speech returns the JSON response directly
-        mock_part3_analysis_list.append(analysis_data)
-        # print(analysis_data)
-        # if 'result' in response_json:
-        #     result = response_json['result']
-        #     scores = {
-        #         "overall": result.get("overall", "N/A"),
-        #         "pronunciation": result.get("pronunciation", "N/A"),
-        #         "fluency": result.get("fluency_coherence", "N/A"),
-        #         "grammar": result.get("grammar", "N/A"),
-        #         "vocabulary": result.get("lexical_resource", "N/A"),
-        #         "relevance": result.get("relevance", "N/A"),
-        #         "transcription": result.get("transcription", "N/A"),
-        #         "pause_filler": result.get("pause_filler", {}),
-        #         "sentences": [
-        #             {
-        #                 "sentence": sentence.get("sentence", ""),
-        #                 "pronunciation": sentence.get("pronunciation", "N/A"),
-        #                 "grammar": sentence.get("grammar", {}).get("corrected", "")
-        #             }
-        #             for sentence in result.get("sentences", [])
-        #         ]
-        #     }
-        #     # analysis_list.append(scores)
-        
-        # # end_time = time.time()
-        # # execution_time = end_time - start_time
-        # # print(f"Execution time: {execution_time} seconds")
-        # os.remove(filename)
-        # # print(scores)
-        # return scores
-        processed_scores = {
-            "overall": scores['ielts_score']['overall'],
-            "pronunciation": scores['ielts_score']['pronunciation'],
-            "fluency": scores['ielts_score']['fluency'],
-            "grammar": scores['ielts_score']['grammar'],
-            "vocabulary": scores['ielts_score']['vocabulary'],
-            "relevance": scores['relevance']['class'],
-            "transcription": scores['transcription'],
-            # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
-        }
+        if part_3_minute:
+            print("use speech super API Part3 mock test")
+            scores,analysis_data = assess_speech2(filename, question_prompts,task_type)
+            response_json = scores  # Assuming assess_speech returns the JSON response directly
+            mock_part3_analysis_list.append(analysis_data)
+            # print(analysis_data)
+            if 'result' in response_json:
+                result = response_json['result']
+                scores = {
+                    "overall": result.get("overall", "N/A"),
+                    "pronunciation": result.get("pronunciation", "N/A"),
+                    "fluency": result.get("fluency_coherence", "N/A"),
+                    "grammar": result.get("grammar", "N/A"),
+                    "vocabulary": result.get("lexical_resource", "N/A"),
+                    "relevance": result.get("relevance", "N/A"),
+                    "transcription": result.get("transcription", "N/A"),
+                    "pause_filler": result.get("pause_filler", {}),
+                    "sentences": [
+                        {
+                            "sentence": sentence.get("sentence", ""),
+                            "pronunciation": sentence.get("pronunciation", "N/A"),
+                            "grammar": sentence.get("grammar", {}).get("corrected", "")
+                        }
+                        for sentence in result.get("sentences", [])
+                    ]
+                }
+                # analysis_list.append(scores)
+            
+            # end_time = time.time()
+            # execution_time = end_time - start_time
+            # print(f"Execution time: {execution_time} seconds")
+            os.remove(filename)
+            # print(scores)
+            return scores
+        else:
+            scores,analysis_data = assess_speech(filename, question_prompts)
+            response_json = scores  # Assuming assess_speech returns the JSON response directly
+            mock_part1_analysis_list.append(analysis_data)
+            processed_scores = {
+                "overall": scores['ielts_score']['overall'],
+                "pronunciation": scores['ielts_score']['pronunciation'],
+                "fluency": scores['ielts_score']['fluency'],
+                "grammar": scores['ielts_score']['grammar'],
+                "vocabulary": scores['ielts_score']['vocabulary'],
+                "relevance": scores['relevance']['class'],
+                "transcription": scores['transcription'],
+                # "sentences": []  # SpeechAce doesn't provide sentence-level data in the same format
+            }
 
-        # Add word-level details to the processed_scores
-        # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
+            # Add word-level details to the processed_scores
+            # processed_scores["word_details"] = analysis_data["word_pronunciation_details"]
 
-        # Clean up the temporary file
-        os.remove(filename)
-        # print(processed_scores)
-        return processed_scores
+            # Clean up the temporary file
+            os.remove(filename)
+            # print(processed_scores)
+            return processed_scores
     except Exception as e:
         print(f"Error assessing speech: {str(e)}")
         return None
-
-
 async def generate_overall_feedback(part1_scores, part2_scores, part3_scores, part1_questions, part1_answers, part2_question, part2_answer, part3_questions, part3_answers, mock_score):
     try:
         # Prepare the prompt for generating overall feedback
@@ -5106,12 +5405,12 @@ async def generate_overall_feedback(part1_scores, part2_scores, part3_scores, pa
                 {"role": "system", "content": "You are a helpful assistant that provides feedback on IELTS Speaking mock tests."},
                 {"role": "user", "content": prompt}
             ],
-            model="llama3-70b-8192",
+            model=groq_model,
         )
         
         # Extract the generated feedback from the response
         feedback = chat_completion.choices[0].message.content
-        
+        print("overall_feedback_generated")
         return feedback
     except Exception as e:
         print("Groq error switching to perplexity",e)
@@ -5140,22 +5439,21 @@ async def generate_overall_feedback(part1_scores, part2_scores, part3_scores, pa
         # print(response.choices[0].message.content)
         feedback = (response.choices[0].message.content)
         return feedback
-
-def calculate_average_scores(scores):
+def calculate_average_scores(scores,len_scores):
+    # num_scores=  len(scores)
     # try:
         avg_scores = {
-            'overall': sum(score['overall'] for score in scores) / len(scores),
-            'pronunciation': sum(score['pronunciation'] for score in scores) / len(scores),
-            'fluency': sum(score['fluency'] for score in scores) / len(scores),
-            'grammar': sum(score['grammar'] for score in scores) / len(scores),
-            'vocabulary': sum(score['vocabulary'] for score in scores) / len(scores)
+            'overall': sum(score['overall'] for score in scores) / len_scores,
+            'pronunciation': sum(score['pronunciation'] for score in scores) / len_scores,
+            'fluency': sum(score['fluency'] for score in scores) / len_scores,
+            'grammar': sum(score['grammar'] for score in scores) / len_scores,
+            'vocabulary': sum(score['vocabulary'] for score in scores) / len_scores
         }
         return avg_scores
     # except Exception as e:
     #     print("caculate average scores function ",e)
     #     # await update.message.reply_text(issue_message)
     #     await error_handling(update, context)
-
 def calculate_overall_average_scores(part1_avg_scores, part2_avg_scores, part3_avg_scores):
     # try:
         overall_avg_scores = {
@@ -5194,7 +5492,10 @@ async def generate_detailed_feedback_part1(update: Update, context: ContextTypes
             # await context.bot.send_message(chat_id=update.effective_chat.id, text=feedback)
             await send_long_message(update, context, feedback)
             # Generate and send the pronunciation visualization image
-            generate_pronunciation_visualization(analysis_data)
+            if part_1_minute:
+                generate_pronunciation_visualization2(analysis_data)
+            else:
+                generate_pronunciation_visualization(analysis_data)
             with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
                 await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
             
@@ -5242,7 +5543,6 @@ async def generate_detailed_feedback_part1(update: Update, context: ContextTypes
         print("generate detailed feedback part 1 function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
 async def generate_detailed_feedback_part2(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         detailed_feedback = []
@@ -5266,7 +5566,7 @@ async def generate_detailed_feedback_part2(update: Update, context: ContextTypes
         # await context.bot.send_message(chat_id=update.effective_chat.id, text=feedback)
         await send_long_message(update, context, feedback)
         # Generate and send the pronunciation visualization image
-        generate_pronunciation_visualization(analysis_data)
+        generate_pronunciation_visualization2(analysis_data)
         with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
             await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
         
@@ -5314,7 +5614,6 @@ async def generate_detailed_feedback_part2(update: Update, context: ContextTypes
         print("generate detiailed feedback part 2 function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
 async def generate_detailed_feedback_part3(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         detailed_feedback = []
@@ -5339,7 +5638,10 @@ async def generate_detailed_feedback_part3(update: Update, context: ContextTypes
             # await context.bot.send_message(chat_id=update.effective_chat.id, text=feedback)
             await send_long_message(update, context, feedback)
             # Generate and send the pronunciation visualization image
-            generate_pronunciation_visualization(analysis_data)
+            if part_3_minute:
+                generate_pronunciation_visualization2(analysis_data)
+            else:
+                generate_pronunciation_visualization(analysis_data)
             with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
                 await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
             
@@ -5384,10 +5686,9 @@ async def generate_detailed_feedback_part3(update: Update, context: ContextTypes
         
         return detailed_feedback
     except Exception as e:
-        print("generate detailed feedback part 3 function ",e)
+        print("generate detailed feedback part 3 mock test function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
 async def generate_mock_test_detailed_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Notify the user that detailed feedback generation is starting
@@ -5431,7 +5732,6 @@ async def generate_mock_test_detailed_feedback(update: Update, context: ContextT
         print("generate mock test detailed feedback function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-
 async def translate_mock_test_overall_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         query = update.callback_query
@@ -5527,55 +5827,23 @@ async def translate_mock_test_detailed_feedback(update: Update, context: Context
         print("translate mock test detailed feedback function ",e)
         # await update.message.reply_text(issue_message)
         await error_handling(update, context)
-def is_valid_gmail(email):
-    try:
-        print("is valid gmail")
-        gmail_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@gmail\.com$')
-        return gmail_regex.match(email) is not None
-    except Exception as e:
-        print("is valid gmail function",e)
-        return True
-        # await update.message.reply_text(issue_message)
-
-def is_real_gmail(email):
-    try:
-        print("is real gmail")
-        api_keys = [
-            "5d64616c34d64b4e98f2647a29648a53",
-            "ff1552bbc5dd4dbc87e5c85645db1cb7",
-            "e9f36cc57580421184a1bc62fd297fb0",
-            "851b30614b984b6588ef91fb6c9b69ab",
-           
-        ]
-        retries = 3
-        while retries > 0:
-            api_key = random.choice(api_keys)
-            try:
-                url = "https://emailvalidation.abstractapi.com/v1"
-                querystring = {"api_key": api_key, "email": email}
-            
-                response = requests.get(url, params=querystring)
-                data = response.json()
-                deliverability = data.get("deliverability")
-            
-                if deliverability == "DELIVERABLE":
-                    return True
-                elif deliverability == "UNDELIVERABLE":
-                    return False
-            except Exception as e:
-                print(f"Error verifying email with API key {api_key}: {e}")
-                retries -= 1
-        
-        return True
-    except Exception as e:
-        print(e)
-        return True
-        # await update.message.reply_text(issue_message)
 
 def main():
     print("main")
+    request = HTTPXRequest(
+    connection_pool_size=50,
+    connect_timeout=5.0,
+    read_timeout=200,
+    pool_timeout=10.0
+)
     # application = Application.builder().token(TOKEN).build()
-    application = Application.builder().token(BOT_TOKEN).read_timeout(200).build()
+    # application = Application.builder().token(BOT_TOKEN).read_timeout(200).connection_pool_size(50).build()
+    application = (
+    Application.builder()
+    .token(BOT_TOKEN)
+    .request(request)
+    .build()
+)
     start_handler = CommandHandler('start', start)
     application.add_handler(start_handler)
     # application.add_handler(CallbackQueryHandler(topic_selection_handler))
