@@ -128,7 +128,7 @@ def assess_speech2(audioPath, question_prompt, task_type):
             print("Retrying...")
             continue
     else:
-        raise("error while assessing in speech assessment", e)
+        assess_speech(audioPath, question_prompt)
 
 import requests
 import json
@@ -212,7 +212,8 @@ def assess_speech(audio_path, question_prompt):
             print("Retrying...")
             continue
     else:
-        raise("error while assessing in speech assessment", e)
+        raise Exception("error while assessing in speech assessment", e)
+        
 # Test the function
 # if __name__ == "__main__":
 #     audio_path = "file_1056.oga"  # Replace with the actual path to your audio file
