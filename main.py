@@ -1246,8 +1246,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             if overall_feedback:
-                translation_task = asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
-                translated_feedback = await translation_task 
+                # translation_task = asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
+                translated_feedback = await (translate_feedback(user_id, overall_feedback, update, context)) 
                 if translated_feedback:
                     await context.bot.send_message(chat_id=update.effective_chat.id, text=translated_feedback)
                 else:
@@ -1271,8 +1271,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             translated_feedback = user_data['translated_feedback1']
             user_data = context.user_data.get('user_data', {})
             for feedback in user_data.get('detailed_feedback_list', []):
-                translation_task = asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
-                translated_msg = await translation_task
+                # translation_task = asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
+                translated_msg = await (translate_feedback(user_id, overall_feedback, update, context))
                 if translated_msg:
                     translated_feedback.append(translated_msg)
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
@@ -1433,8 +1433,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=update.effective_chat.id, text="Please wait a few minutes until result is ready.")
 
             if overall_feedback:
-                translation_task = asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
-                translated_feedback = await translation_task
+                # translation_task = asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
+                translated_feedback = await (translate_feedback(user_id, overall_feedback, update, context))
                 if translated_feedback:
                     await context.bot.send_message(chat_id=update.effective_chat.id, text=translated_feedback)
                 else:
@@ -1461,8 +1461,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             detailed_feedback2_list = user_data.get('detailed_feedback2_list', [])
             translated_feedback = user_data['translated_feedback2']
             for feedback in detailed_feedback2_list:
-                translation_task = asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
-                translated_msg = await translation_task
+                # translation_task = asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
+                translated_msg = await (translate_feedback(user_id, overall_feedback, update, context))
                 if translated_msg:
                     translated_feedback.append(translated_msg)
             
@@ -1616,8 +1616,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=update.effective_chat.id, text="Please wait a few minutes until result is ready.")
 
             if overall_feedback:
-                translation_task = asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
-                translated_feedback = await translation_task
+                # translation_task = asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
+                translated_feedback = await (translate_feedback(user_id, overall_feedback, update, context))
                 await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
                 if translated_feedback:
                     await context.bot.send_message(chat_id=update.effective_chat.id, text=translated_feedback)
@@ -1644,8 +1644,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             detailed_feedback3_list = user_data.get('detailed_feedback3_list', [])
             translated_feedback = user_data['translated_feedback3']
             for feedback in detailed_feedback3_list:
-                translation_task = asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
-                translated_msg = await translation_task
+                # translation_task = asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
+                translated_msg = await asyncio.create_task(translate_feedback(user_id, overall_feedback, update, context))
                 if translated_msg:
                     translated_feedback.append(translated_msg)
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
@@ -1705,11 +1705,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif query.data == f'{userID}mock_test_translate_feedback':
             await query.edit_message_reply_markup(reply_markup=None)
-            asyncio.create_task(translate_mock_test_overall_feedback(update, context)) 
+            await (translate_mock_test_overall_feedback(update, context)) 
 
         elif query.data == f'{userID}mock_test_translate_detailed_feedback':
             await query.edit_message_reply_markup(reply_markup=None)
-            asyncio.create_task(translate_mock_test_detailed_feedback(update, context))
+            await (translate_mock_test_detailed_feedback(update, context))
 
     except Exception as e:
         print("button handler function ", e)
