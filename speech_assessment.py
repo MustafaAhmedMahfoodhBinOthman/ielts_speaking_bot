@@ -140,8 +140,10 @@ def assess_speech(audio_path, question_prompt):
     while retries < max_retries:
         try:
             # Your SpeechAce API key
-            api_key = "BJ9VT3IxOwMJJF6iEs5sP%2B880nQZGmGtsK5N2kOXktWbq1n8g3SwsJW1DQO6rkKbqzOV4VK9yvB2TMvFSnBSfO4%2F1NW%2BEHrEegYR%2B8ax%2BGQ6L2cMHYbtxBzcgOV4%2FgEQ"
-            url = f"https://api5.speechace.com/api/scoring/speech/v0.7/json?key={api_key}&dialect=en-us&user_id=XYZ-ABC-99001"
+            # api_key = "BJ9VT3IxOwMJJF6iEs5sP%2B880nQZGmGtsK5N2kOXktWbq1n8g3SwsJW1DQO6rkKbqzOV4VK9yvB2TMvFSnBSfO4%2F1NW%2BEHrEegYR%2B8ax%2BGQ6L2cMHYbtxBzcgOV4%2FgEQ"
+            # url = f"https://api5.speechace.com/api/scoring/speech/v0.7/json?key={api_key}&dialect=en-us&user_id=XYZ-ABC-99001"
+            api_key="PoZ2Hi%2BM0rzSkhPMFakj6N3cjIPrUJKouPg6qTe%2FCY1AZpZYQHmIizoy%2BlHyu%2BRzhsRMAg6EF0jYeY4c9A8cKdp%2B4yjaoB1d8gK6%2Fu5RuQ8nbKcM%2BhpfEBiABiZc27Lf"
+            url = f"https://api.speechace.co/api/scoring/speech/v0.7/json?key={api_key}&dialect=en-us&user_id=XYZ-ABC-99001"
             payload = {
                 # 'key': api_key,
                 # 'dialect': 'en-us',
