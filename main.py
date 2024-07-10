@@ -3149,11 +3149,11 @@ def process_speech_super_scores(response_json):
         return {
             "overall": result.get("overall", 0),
             "pronunciation": result.get("pronunciation", 0),
-            "fluency": result.get("fluency_coherence", 0),
-            "grammar": result.get("grammar", "N/A"),
-            "vocabulary": result.get("lexical_resource", 0),
+            "fluency": result.get("fluency", 0),
+            "grammar": result.get("grammar", "0"),
+            "vocabulary": result.get("vocabulary", 0),
             "relevance": result.get("relevance", "N/A"),
-            "transcription": result.get("transcription", 0),
+            "transcription": result.get("transcription", "N/A"),
         }
     # return None
 
