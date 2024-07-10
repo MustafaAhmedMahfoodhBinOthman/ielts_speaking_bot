@@ -3143,8 +3143,9 @@ async def assess_speech_async(audio_url, question_prompt, task_type, context: Co
         return None
 
 def process_speech_super_scores(response_json):
-    if 'result' in response_json:
-        result = response_json['result']
+    # if 'result' in response_json:
+    #     result = response_json['result']
+        result=response_json 
         return {
             "overall": result.get("overall", 0),
             "pronunciation": result.get("pronunciation", 0),
@@ -3154,7 +3155,7 @@ def process_speech_super_scores(response_json):
             "relevance": result.get("relevance", "N/A"),
             "transcription": result.get("transcription", 0),
         }
-    return None
+    # return None
 
 def process_speechace_scores(scores):
     return {
