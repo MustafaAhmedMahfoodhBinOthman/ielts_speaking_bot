@@ -318,6 +318,11 @@ async def user_data_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data['list_previous_answers'] = []
     user_data['translated_feedback1'] = []
     user_data['current_state'] =[]
+    user_data['part_1_minute_part_1'] =[]
+    user_data['part_1_minute_part_2'] =[]
+    user_data['part_1_minute_part_3'] =[]
+    user_data['part_1_minute_part_1_mock'] =[]
+    user_data['part_1_minute_part_1_mock'] =[]
     user_data['part2_voice_urls'] = []
     user_data['part2_questions'] = []
     user_data['part2_answers'] = []
@@ -810,11 +815,16 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     file_id = update.message.voice.file_id
                     file = await context.bot.get_file(file_id)
                     file_path = file.file_path
-                    
+                    part_1_minute_part1 = user_data['part_1_minute_part_1']
                     voice_duration = update.message.voice.duration
                     if voice_duration > 58:
                         user_data['part_1_minute'] = True
+                        part_1_minute_part1.append(True)
                         print(f"{update.effective_user.id} user exceeds 1 minute: ", user_data['part_1_minute'])
+                    else:
+                        part_1_minute_part1.append(False)
+                        user_data['part_1_minute'] = False
+                    
                     if voice_duration > 80:  # 1 minute and 30 seconds
                         await update.message.reply_text("Your answer is too long. Please record another answer shorter than 1 minute.")
                     else:
@@ -2960,7 +2970,7 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
         targeted_score = user_data.get('targeted_score', 7)
         questions_list = user_data.get('questions', [])
         answers_list = user_data.get('answers_list', {})
-
+        one_minute = user_data['part_1_minute_part_1']
         print(f"{update.effective_user.id} user_targetes_score: ", targeted_score)
 
         # Send the sticker and waiting message
@@ -3007,6 +3017,8 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
         for i in range(len(questions_list)):
             audio_url = voice_urls[i]
             question_prompt = questions_list[i]
+            print("one_minute: ",one_minute[i])
+            user_data['part_1_minute'] = one_minute[i]
             task_type = "ielts_part1"
 
             processed_scores = await assess_speech_async(audio_url, question_prompt, task_type, context)
@@ -3117,6 +3129,7 @@ async def assess_speech_async(audio_url, question_prompt, task_type, context: Co
 
         loop = asyncio.get_running_loop()
         print("user_data['part_1_minute']: ",user_data['part_1_minute'])
+        print("user_data['part_1_minute_part_1']: ",user_data['part_1_minute_part_1'])
         if user_data['part_1_minute']:  
             print("use speech super API (part 1)")
             scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
@@ -3177,7 +3190,7 @@ async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAU
         answers_list = user_data.get('answers_list', [])
         analysis_list = user_data.get('analysis_list', [])
         voice_urls = user_data.get('voice_urls', [])
-
+        one_minute = user_data['part_1_minute_part_1']
         user_data['detailed_feedback'] = []
         detailed_feedback = user_data['detailed_feedback']
 
@@ -3186,7 +3199,7 @@ async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAU
             user_answer = answers_list[i]
             analysis_data = analysis_list[i]
             user_voice_url = voice_urls[i]
-
+            user_data['part_1_minute'] = one_minute[i]
             prompt = f"Question: {question}\nUser Answer: {user_answer}\nAnalysis Data: {analysis_data}\n\n"
             prompt += """Please provide a detailed analysis of the user's answer, considering the pronunciation, fluency, grammar, vocabulary, and relevance. Generate useful feedback that helps the user understand their performance in depth.
             You should organize it in a clear and good feedback to the IELTS Candidate. They expect to know their mistakes and improve next time. Also, it is a good idea to write the question in the feedback and the answer and then start your analysis.
