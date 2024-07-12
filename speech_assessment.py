@@ -8,7 +8,8 @@ import time
 appKey = "1717662733000321"
 secretKey = "7e7d1a029ebd4229b4145da5ebba4049"
 baseURL = "https://api.speechsuper.com/"
-
+appKey2 = "1720779922000350"
+secretKey2 = "9670dcbafe4a01357664719f8517db51"
 def assess_speech2(audioPath, question_prompt, task_type):
     max_retries = 3
     retries = 0
@@ -130,6 +131,128 @@ def assess_speech2(audioPath, question_prompt, task_type):
     else:
         assess_speech(audioPath, question_prompt)
 
+
+def assess_speech3(audioPath, question_prompt, task_type):
+    max_retries = 3
+    retries = 0
+    while retries < max_retries:
+        try:
+            timestamp = str(int(time.time()))
+            coreType = "speak.eval.pro"
+            audioType = "mp3"
+            audioSampleRate = 16000
+            userId = "guest"
+
+            url = baseURL + coreType
+            connectStr = (appKey2 + timestamp + secretKey2).encode("utf-8")
+            connectSig = hashlib.sha1(connectStr).hexdigest()
+            startStr = (appKey2 + timestamp + userId + secretKey2).encode("utf-8")
+            startSig = hashlib.sha1(startStr).hexdigest()
+
+            params = {
+                "connect": {
+                    "cmd": "connect",
+                    "param": {
+                        "sdk": {
+                            "version": 16777472,
+                            "source": 9,
+                            "protocol": 2
+                        },
+                        "app": {
+                            "applicationId": appKey2,
+                            "sig": connectSig,
+                            "timestamp": timestamp
+                        }
+                    }
+                },
+                "start": {
+                    "cmd": "start",
+                    "param": {
+                        "app": {
+                            "userId": userId,
+                            "applicationId": appKey2,
+                            "timestamp": timestamp,
+                            "sig": startSig
+                        },
+                        "audio": {
+                            "audioType": audioType,
+                            "channel": 1,
+                            "sampleBytes": 2,
+                            "sampleRate": audioSampleRate
+                        },
+                        "request": {
+                            "coreType": coreType,
+                            "test_type": "ielts",
+                            "question_prompt": question_prompt,
+                            "task_type": task_type,
+                            "phoneme_output": 1,
+                            "model": "non_native",
+                            "penalize_offtopic": 1,
+                            "decimal_point": 0,
+                            "tokenId": "tokenId"
+                        }
+                    }
+                }
+            }
+
+            datas = json.dumps(params)
+            data = {'text': datas}
+            headers = {"Request-Index": "0"}
+            files = {"audio": open(audioPath, 'rb')}
+            res = requests.post(url, data=data, headers=headers, files=files)
+
+            response_json = res.json()
+            if 'result' in response_json:
+                result = response_json['result']
+                scores = {
+                        "overall": result.get("overall", "N/A"),
+                        "pronunciation": result.get("pronunciation", "N/A"),
+                        "fluency": result.get("fluency_coherence", "N/A"),
+                        "grammar": result.get("grammar", "N/A"),
+                        "vocabulary": result.get("lexical_resource", "N/A"),
+                        "relevance": result.get("relevance", "N/A"),
+                        "transcription": result.get("transcription", "N/A"),
+                        # "pause_filler": result.get("pause_filler", {}),
+                        "sentences": [
+                            {
+                                "sentence": sentence.get("sentence", ""),
+                                "pronunciation": sentence.get("pronunciation", "N/A"),
+                                "grammar": sentence.get("grammar", {}).get("corrected", "")
+                            }
+                            for sentence in result.get("sentences", [])
+                        ]
+                    }
+            # Create a new variable to store word-level pronunciation details
+                word_pronunciation_details = []
+                for sentence in result.get("sentences", []):
+                    sentence_details = []
+                    for word_info in sentence.get("details", []):
+                        word = word_info.get("word", "")
+                        pronunciation = word_info.get("pronunciation", "N/A")
+                        sentence_details.append({"word": word, "pronunciation": pronunciation})
+                    word_pronunciation_details.append(sentence_details)
+                
+                # Combine the scores and word_pronunciation_details into a single dictionary
+                analysis_data = {
+                    "scores": scores,
+                    "word_pronunciation_details": word_pronunciation_details
+                }
+                
+                # print(scores)
+                return scores,analysis_data
+                # return scores
+            else:
+                print("Failed to get the assessment result.")
+                raise("error while assessing in speech assessment", e)
+                return None
+        except Exception as e:
+            retries += 1
+            print("An internal error has occurred: now will use ", e)
+            print("Retrying...")
+            continue
+    else:
+        assess_speech(audioPath, question_prompt)
+
 import requests
 import json
 
@@ -140,14 +263,12 @@ def assess_speech(audio_path, question_prompt):
     while retries < max_retries:
         try:
             # Your SpeechAce API key
-            # api_key = "BJ9VT3IxOwMJJF6iEs5sP%2B880nQZGmGtsK5N2kOXktWbq1n8g3SwsJW1DQO6rkKbqzOV4VK9yvB2TMvFSnBSfO4%2F1NW%2BEHrEegYR%2B8ax%2BGQ6L2cMHYbtxBzcgOV4%2FgEQ"
-            # url = f"https://api5.speechace.com/api/scoring/speech/v0.7/json?key={api_key}&dialect=en-us&user_id=XYZ-ABC-99001"
             api_key="PoZ2Hi%2BM0rzSkhPMFakj6N3cjIPrUJKouPg6qTe%2FCY1AZpZYQHmIizoy%2BlHyu%2BRzhsRMAg6EF0jYeY4c9A8cKdp%2B4yjaoB1d8gK6%2Fu5RuQ8nbKcM%2BhpfEBiABiZc27Lf"
             url = f"https://api.speechace.co/api/scoring/speech/v0.7/json?key={api_key}&dialect=en-us&user_id=XYZ-ABC-99001"
+            # api_key = "BJ9VT3IxOwMJJF6iEs5sP%2B880nQZGmGtsK5N2kOXktWbq1n8g3SwsJW1DQO6rkKbqzOV4VK9yvB2TMvFSnBSfO4%2F1NW%2BEHrEegYR%2B8ax%2BGQ6L2cMHYbtxBzcgOV4%2FgEQ"
+            # url = f"https://api5.speechace.com/api/scoring/speech/v0.7/json?key={api_key}&dialect=en-us&user_id=XYZ-ABC-99001"
             payload = {
-                # 'key': api_key,
-                # 'dialect': 'en-us',
-                # 'user_id': 'XYZ-ABC-99001',
+               
                 'include_fluency': '1',
                 'include_ielts_subscore': '1',
                 'include_unknown_words': '1',
@@ -215,7 +336,20 @@ def assess_speech(audio_path, question_prompt):
             continue
     else:
         raise Exception("error while assessing in speech assessment", e)
-        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # Test the function
 # if __name__ == "__main__":
 #     audio_path = "file_1056.oga"  # Replace with the actual path to your audio file
