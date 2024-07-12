@@ -34,6 +34,14 @@ import pandas as pd
 from openai import OpenAI
 from dotenv import load_dotenv
 load_dotenv()
+from collections import defaultdict
+from datetime import datetime, timedelta
+import pytz
+from datetime import datetime, timedelta
+from collections import defaultdict
+from dateutil.parser import parse
+from dateutil.tz import tzutc
+import pytz
 from concurrent.futures import ThreadPoolExecutor
 from unify import Unify
 import aiohttp
@@ -1790,11 +1798,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Simulate the /broadcast command
             await query.edit_message_text("/broadcast")
             # return await broadcast(update, context)
+                # Update your handler
         elif query.data == "admin_stats":
-            # Implement bot statistics functionality here
-            await query.message.reply_text("Bot statistics functionality not implemented yet.")
-            text = "Bot statistics functionality not implemented yet."
-            await show_main_menu(update, context, text)
+            await admin_stats(update, context)
         else:
             await query.message.reply_text("Invalid admin option.")
             text = "Invalid admin option."
@@ -3474,7 +3480,7 @@ def process_speechace_scores(scores):
 
 async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, waiting_message):
     try:
-        print("detailed part 1 feedback")
+        print(f"{update.effective_user.id} detailed part 1 feedback")
         user_data = context.user_data.setdefault('user_data', {})
         await score_voice(update, context)
         examiner_voice = user_data['examiner_voice']
@@ -3903,6 +3909,7 @@ async def show_result2(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await error_handling(update, context,text)
 async def generate_detailed2_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, waiting_message):
     try:
+        print(f"{update.effective_user.id} detailed part 2 feedback")
         user_data = context.user_data.setdefault('user_data', {})
         await score_voice(update, context)
         examiner_voice = user_data['examiner_voice']
@@ -4349,14 +4356,26 @@ async def assess_part3_speech_async(audio_url, question_prompt, task_type, conte
 
         print("user_data['part_3_minute']: ", user_data['part_3_minute'])
 
+        # loop = asyncio.get_running_loop()
+        # if user_data['part_3_minute']:
+        #     print("use speech super API (part 3)")
+        #     scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
+        #     response_json = scores
+        # else:
+        #     scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompt)
         loop = asyncio.get_running_loop()
-        if user_data['part_3_minute']:
-            print("use speech super API (part 3)")
-            scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
-            response_json = scores
-        else:
-            scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompt)
-
+        # print("user_data['part_1_minute']: ",one_minute1)
+        # print("user_data['part_1_minute_part_1']: ",user_data['part_1_minute_part_1'])
+        try:
+            print("use speech super assess_speech3 API (part 3)")
+            scores, analysis_data = await loop.run_in_executor(executor, assess_speech3, filename, question_prompt, task_type)
+        except Exception as e:
+            print("🚨 Error on assess_speech3 speech super API and switching to Speech ace API ", e)
+            try:
+                scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompt)
+            except Exception as e:
+                print("🚨Error on Speech Ace API and switching to Speech Super API assess_speech2 ", e)
+                scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
         if scores is None or analysis_data is None:
             raise Exception("🚨 Assessment failed")
 
@@ -4364,7 +4383,8 @@ async def assess_part3_speech_async(audio_url, question_prompt, task_type, conte
         analysis_list = user_data['analysis3_list']
         analysis_list.append(analysis_data)
 
-        if user_data['part_3_minute']:
+        # if user_data['part_3_minute']:
+        try:
             if 'result' in response_json:
                 result = response_json['result']
                 scores = {
@@ -4389,7 +4409,9 @@ async def assess_part3_speech_async(audio_url, question_prompt, task_type, conte
             os.remove(filename)
             print(len(user_data['analysis3_list']))
             return scores
-        else:
+        # else:
+        except Exception as e:
+            print('🚨 Error assess_part 3 speech assessing', e)
             processed_scores = {
                 "overall": scores['ielts_score']['overall'],
                 "pronunciation": scores['ielts_score']['pronunciation'],
@@ -4523,6 +4545,7 @@ async def generate_feedback3(scores_list, questions, answers, overall_avg,target
         return user_data['generate_feedback3']
 async def generate_detailed3_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        print(f"{update.effective_user.id} detailed part 3 feedback")
         user_data = context.user_data.setdefault('user_data', {})
 
         part3_questions = user_data.get('part3_questions', [])
@@ -4553,10 +4576,15 @@ async def generate_detailed3_feedback(update: Update, context: ContextTypes.DEFA
             user_data.setdefault('detailed_feedback3_list', []).append(feedback)
             await send_long_message(update, context, feedback)
 
-            if user_data['part_3_minute']:
-                generate_pronunciation_visualization2(analysis_data)
-            else:
-                generate_pronunciation_visualization(analysis_data)
+            # if user_data['part_3_minute']:
+            #     generate_pronunciation_visualization2(analysis_data)
+            # else:
+            #     generate_pronunciation_visualization(analysis_data)
+            try:
+                await asyncio.to_thread(generate_pronunciation_visualization2, analysis_data)
+            except Exception as e:
+                print("asyncio.to_thread(generate_pronunciation_visualization2, analysis_data): ", e)
+                await asyncio.to_thread(generate_pronunciation_visualization, analysis_data)
             with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
                 await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
             
@@ -5440,16 +5468,28 @@ async def assess_part1_mock_async(audio_urls, question_prompts, task_type, conte
         with open(filename, "wb") as file:
             file.write(response.content)
 
-        print("user_data['part_1_minute']: ", user_data['part_1_minute'])
+        # print("user_data['part_1_minute']: ", user_data['part_1_minute'])
 
+        # loop = asyncio.get_running_loop()
+        # if user_data['part_1_minute']:
+        #     print("use speech super API Part1 mock test")
+        #     scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompts, task_type)
+        #     response_json = scores
+        # else:
+        #     scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompts)
         loop = asyncio.get_running_loop()
-        if user_data['part_1_minute']:
-            print("use speech super API Part1 mock test")
-            scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompts, task_type)
-            response_json = scores
-        else:
-            scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompts)
-
+        # print("user_data['part_1_minute']: ",one_minute1)
+        # print("user_data['part_1_minute_part_1']: ",user_data['part_1_minute_part_1'])
+        try:
+            print("use speech super assess_speech3 API (mock test part 1)")
+            scores, analysis_data = await loop.run_in_executor(executor, assess_speech3, filename, question_prompts, task_type)
+        except Exception as e:
+            print("🚨 Error on assess_speech3 speech super API and switching to Speech ace API ", e)
+            try:
+                scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompts)
+            except Exception as e:
+                print("🚨Error on Speech Ace API and switching to Speech Super API assess_speech2 ", e)
+                scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompts, task_type)
         if scores is None or analysis_data is None:
             raise Exception("🚨 Assessment failed")
 
@@ -5457,7 +5497,8 @@ async def assess_part1_mock_async(audio_urls, question_prompts, task_type, conte
         mock_part1_analysis_list = user_data['mock_part1_analysis_list']
         mock_part1_analysis_list.append(analysis_data)
 
-        if user_data['part_1_minute']:
+        # if user_data['part_1_minute']:
+        try:
             if 'result' in response_json:
                 result = response_json['result']
                 scores = {
@@ -5481,7 +5522,9 @@ async def assess_part1_mock_async(audio_urls, question_prompts, task_type, conte
             os.remove(filename)
             print(len(user_data['mock_part1_analysis_list']))
             return scores
-        else:
+        # else:
+        except Exception as e:
+            print("🚨 assess_part1 mock test", e)
             processed_scores = {
                 "overall": scores['ielts_score']['overall'],
                 "pronunciation": scores['ielts_score']['pronunciation'],
@@ -5580,16 +5623,28 @@ async def assess_part3_mock_async(audio_urls, question_prompts, task_type, conte
         with open(filename, "wb") as file:
             file.write(response.content)
 
-        print("user_data['part_3_minute']: ", user_data['part_3_minute'])
+        # print("user_data['part_3_minute']: ", user_data['part_3_minute'])
 
+        # loop = asyncio.get_running_loop()
+        # if user_data['part_3_minute']:
+        #     print("use speech super API Part3 mock test")
+        #     scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompts, task_type)
+        #     response_json = scores
+        # else:
+        #     scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompts)
         loop = asyncio.get_running_loop()
-        if user_data['part_3_minute']:
-            print("use speech super API Part3 mock test")
-            scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompts, task_type)
-            response_json = scores
-        else:
-            scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompts)
-
+        # print("user_data['part_1_minute']: ",one_minute1)
+        # print("user_data['part_1_minute_part_1']: ",user_data['part_1_minute_part_1'])
+        try:
+            print("use speech super assess_speech3 API (mock test part 3)")
+            scores, analysis_data = await loop.run_in_executor(executor, assess_speech3, filename, question_prompts, task_type)
+        except Exception as e:
+            print("🚨 Error on assess_speech3 speech super API and switching to Speech ace API ", e)
+            try:
+                scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompts)
+            except Exception as e:
+                print("🚨Error on Speech Ace API and switching to Speech Super API assess_speech2 ", e)
+                scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompts, task_type)
         if scores is None or analysis_data is None:
             raise Exception("🚨 Assessment failed")
 
@@ -5597,7 +5652,8 @@ async def assess_part3_mock_async(audio_urls, question_prompts, task_type, conte
         mock_part3_analysis_list = user_data['mock_part3_analysis_list']
         mock_part3_analysis_list.append(analysis_data)
 
-        if user_data['part_3_minute']:
+        # if user_data['part_3_minute']:
+        try:
             if 'result' in response_json:
                 result = response_json['result']
                 scores = {
@@ -5622,7 +5678,8 @@ async def assess_part3_mock_async(audio_urls, question_prompts, task_type, conte
             os.remove(filename)
             print(len(user_data['mock_part3_analysis_list']))
             return scores
-        else:
+        # else:
+        except Exception as e:
             processed_scores = {
                 "overall": scores['ielts_score']['overall'],
                 "pronunciation": scores['ielts_score']['pronunciation'],
@@ -5839,9 +5896,14 @@ async def generate_detailed_feedback_part1(update: Update, context: ContextTypes
             await send_long_message(update, context, feedback)
 
             # Generate and send the pronunciation visualization image
-            if user_data['part_1_minute']:
+            # if user_data['part_1_minute']:
+            #     await asyncio.to_thread(generate_pronunciation_visualization2, analysis_data)
+            # else:
+            #     await asyncio.to_thread(generate_pronunciation_visualization, analysis_data)
+            try:
                 await asyncio.to_thread(generate_pronunciation_visualization2, analysis_data)
-            else:
+            except Exception as e:
+                print("asyncio.to_thread(generate_pronunciation_visualization2, analysis_data): ", e)
                 await asyncio.to_thread(generate_pronunciation_visualization, analysis_data)
             with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
                 await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
@@ -6017,9 +6079,14 @@ async def generate_detailed_feedback_part3(update: Update, context: ContextTypes
             await send_long_message(update, context, feedback)
 
             # Generate and send the pronunciation visualization image
-            if user_data['part_3_minute']:
+            # if user_data['part_3_minute']:
+            #     await asyncio.to_thread(generate_pronunciation_visualization2, analysis_data)
+            # else:
+            #     await asyncio.to_thread(generate_pronunciation_visualization, analysis_data)
+            try:
                 await asyncio.to_thread(generate_pronunciation_visualization2, analysis_data)
-            else:
+            except Exception as e:
+                print("asyncio.to_thread(generate_pronunciation_visualization2, analysis_data): ", e)
                 await asyncio.to_thread(generate_pronunciation_visualization, analysis_data)
             with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
                 await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
@@ -6078,6 +6145,7 @@ async def generate_detailed_feedback_part3(update: Update, context: ContextTypes
         await error_handling(update, context,text)
 async def generate_mock_test_detailed_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        print(f"{update.effective_user.id} detailed mock test feedback")
         user_data = context.user_data.setdefault('user_data', {})
 
         # Notify the user that detailed feedback generation is starting
@@ -6322,6 +6390,184 @@ async def get_all_user_ids():
 #   # Implement this function to fetch user IDs from your database
 #   # For testing, you can return a list with just one user ID
 #   return [5357232217]  # Replace with actual implementation
+#-------------------- Statistics ------------------------
+# def generate_bot_statistics():
+#   # Assuming you have a Supabase client set up
+# #   supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+#   # Get all users
+#   users = supabase.table('ielts_speaking_users').select('*').execute()
+  
+#   # Get all practice scores
+#   scores = supabase.table('ielts_speaking_scores').select('*').execute()
+
+#   now = datetime.now(tzutc())
+
+#   # Total number of users
+#   total_users = len(users.data)
+
+#   # Users registered in different time periods
+#   users_yesterday = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 1)
+#   users_last_week = sum(1 for user in users.data if 1 <= (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 7)
+#   users_last_month = sum(1 for user in users.data if 1 <= (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 30)
+
+#   # Users who practiced today
+#   users_practiced_today = sum(1 for user in users.data if user['last_practice_date'] and 
+#                               (now - parse(user['last_practice_date'])).days == 0)
+
+#   # Users in channel
+#   users_in_channel = sum(1 for user in users.data if user['in_channel'] is True)
+
+#   # Users by native language and English level
+#   users_by_language = defaultdict(int)
+#   users_by_level = defaultdict(int)
+#   for user in users.data:
+#       users_by_language[user.get('native_language', 'Unknown')] += 1
+#       users_by_level[user.get('english_level', 'Unknown')] += 1
+
+#   # Users with email
+#   users_with_email = sum(1 for user in users.data if user.get('email'))
+
+#   # Practice statistics
+#   total_practices = sum(user['practice_count'] for user in users.data)
+#   avg_practices_per_user = total_practices / total_users if total_users > 0 else 0
+
+#   # Average scores
+#   avg_scores = {
+#       'part1': sum(score['part1_score'] for score in scores.data if score['part1_score']) / len(scores.data) if scores.data else 0,
+#       'part2': sum(score['part2_score'] for score in scores.data if score['part2_score']) / len(scores.data) if scores.data else 0,
+#       'part3': sum(score['part3_score'] for score in scores.data if score['part3_score']) / len(scores.data) if scores.data else 0,
+#       'mock_test': sum(score['mock_test_score'] for score in scores.data if score['mock_test_score']) / len(scores.data) if scores.data else 0,
+#   }
+
+#   # Generate report
+#   report = f"""
+#   Bot Statistics Report:
+
+#   Total Users: {total_users}
+#   Users Registered:
+#   - Yesterday: {users_yesterday}
+#   - Last Week: {users_last_week}
+#   - Last Month: {users_last_month}
+
+#   Users Practiced Today: {users_practiced_today}
+#   Total Practices: {total_practices}
+#   Average Practices per User: {avg_practices_per_user:.2f}
+
+#   Users in Channel: {users_in_channel}
+#   Users with Email: {users_with_email}
+
+#   Users by Native Language:
+#   {', '.join(f'{lang}: {count}' for lang, count in users_by_language.items())}
+
+#   Users by English Level:
+#   {', '.join(f'{level}: {count}' for level, count in users_by_level.items())}
+
+#   Average Scores:
+#   - Part 1: {avg_scores['part1']:.2f}
+#   - Part 2: {avg_scores['part2']:.2f}
+#   - Part 3: {avg_scores['part3']:.2f}
+#   - Mock Test: {avg_scores['mock_test']:.2f}
+#   """
+
+#   return report
+
+
+def generate_bot_statistics():
+    try:
+        now = datetime.now(tzutc())
+
+        # Fetch users and scores data from Supabase
+        users = supabase.table("ielts_speaking_users").select("*").execute()
+        scores = supabase.table("ielts_speaking_scores").select("*").execute()
+
+        # Total users
+        total_users = len(users.data)
+
+        # Users registered in different time periods
+        users_today = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 0)
+        users_yesterday = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 1)
+        users_last_week = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 7)
+        users_last_month = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 30)
+
+        # Users who practiced today
+        users_practiced_today = sum(1 for user in users.data if user['last_practice_date'] and parse(user['last_practice_date']).date() == now.date())
+
+        # Users in channel
+        users_in_channel = sum(1 for user in users.data if user['in_channel'] is True)
+
+        # Users by native language and English level
+        users_by_language = defaultdict(int)
+        users_by_level = defaultdict(int)
+        for user in users.data:
+            lang = user.get('native_language', 'Unknown').lower().capitalize()
+            users_by_language[lang] += 1
+            users_by_level[user.get('english_level', 'Unknown')] += 1
+
+        # Total practice count
+        total_practice_count = sum(user['practice_count'] for user in users.data if user['practice_count'])
+
+        # Average scores
+        part1_scores = [score['part1_score'] for score in scores.data if score['part1_score']]
+        part2_scores = [score['part2_score'] for score in scores.data if score['part2_score']]
+        part3_scores = [score['part3_score'] for score in scores.data if score['part3_score']]
+        mock_test_scores = [score['mock_test_score'] for score in scores.data if score['mock_test_score']]
+
+        avg_scores = {
+            'part1': sum(part1_scores) / len(part1_scores) if part1_scores else 0,
+            'part2': sum(part2_scores) / len(part2_scores) if part2_scores else 0,
+            'part3': sum(part3_scores) / len(part3_scores) if part3_scores else 0,
+            'mock_test': sum(mock_test_scores) / len(mock_test_scores) if mock_test_scores else 0,
+        }
+
+        # Generate the report
+        report = f"""
+        📊 Bot Statistics Report
+
+        👥 Total Users: {total_users}
+        🆕 New Users:
+        • Today: {users_today}
+        • Yesterday: {users_yesterday}
+        • Last Week: {users_last_week}
+        • Last Month: {users_last_month}
+
+        🏋️ Practice Statistics:
+        • Total Practices: {total_practice_count}
+        • Users Practiced Today: {users_practiced_today}
+
+        📺 Channel Membership:
+        • Users in Channel: {users_in_channel}
+
+        🌎 Users by Native Language:
+        {chr(10).join(f"  • {lang}: {count}" for lang, count in sorted(users_by_language.items()))}
+
+        🎓 Users by English Level:
+        {chr(10).join(f"  • {level}: {count}" for level, count in sorted(users_by_level.items()))}
+
+        📈 Average Scores:
+        • Part 1: {avg_scores['part1']:.2f}
+        • Part 2: {avg_scores['part2']:.2f}
+        • Part 3: {avg_scores['part3']:.2f}
+        • Mock Test: {avg_scores['mock_test']:.2f}
+        """
+
+        return report
+    except Exception as e:
+        print("generate bot statistics ",e)
+        
+
+# Usage in your bot
+# @bot.on_callback_query(filters.regex("^admin_stats$"))
+async def admin_stats(update, context):
+    # supabase = context.bot_data['supabase']  # Assuming you've stored the Supabase client in bot_data
+    try:
+        query = update.callback_query
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception as e:
+        print(e)
+    stats_report = generate_bot_statistics()
+    await update.callback_query.message.reply_text(stats_report)
+    await show_main_menu(update, context, "Here are the bot statistics.")
 
 def main():
     print("main")
