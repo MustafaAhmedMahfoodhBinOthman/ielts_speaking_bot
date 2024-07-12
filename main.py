@@ -4,7 +4,7 @@ import requests
 import json
 import random
 from supabase import create_client, Client
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton,ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.error import BadRequest, NetworkError, TimedOut
 from datetime import datetime, timedelta
@@ -14,7 +14,7 @@ from deepgram import DeepgramClient, PrerecordedOptions, SpeakOptions
 from PIL import Image, ImageDraw, ImageFont
 import logging
 import asyncio
-from speech_assessment import assess_speech,assess_speech2
+from speech_assessment import assess_speech,assess_speech2,assess_speech3
 
 from topic_vocabularies import topic_vocabularies
 import matplotlib.pyplot as plt
@@ -104,7 +104,7 @@ translated_languages = [
 ]
 
 groq_model = "llama3-70b-8192"
-
+ADMIN_IDS = [1115038445]
 voice_samples = {
     "Dan": "Dan.mp3",  # Assuming these are the filenames in your examiners_voice folder
     "William": "William.mp3",
@@ -293,6 +293,7 @@ async def score_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_data['examiner_voice'] = user.data[0]['examiner_voice']
         user_data['targeted_score'] = user.data[0]['target_ielts_score']
     # print(user_data['examiner_voice'] , user_data['targeted_score'])
+
 async def user_data_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     username = update.effective_user.username
@@ -318,11 +319,13 @@ async def user_data_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data['list_previous_answers'] = []
     user_data['translated_feedback1'] = []
     user_data['current_state'] =[]
+
     user_data['part_1_minute_part_1'] =[]
     user_data['part_1_minute_part_2'] =[]
     user_data['part_1_minute_part_3'] =[]
     user_data['part_1_minute_part_1_mock'] =[]
     user_data['part_1_minute_part_1_mock'] =[]
+    
     user_data['part2_voice_urls'] = []
     user_data['part2_questions'] = []
     user_data['part2_answers'] = []
@@ -409,6 +412,8 @@ async def ask_target_ielts_score(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         text = ("🚨 ask targeted score function", e)
         await error_handling(update, context,text)
+
+
 async def ask_preferred_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"{update.effective_user.id} ask preferred examiner voice")
     try:
@@ -564,6 +569,20 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         del user_data['part_1_topic_selection']
                     except Exception as e:
                         pass
+                    try:
+                        #print("Find and remove the inline keyboard from the previous message")
+                        chat_id = update.effective_chat.id
+                        message_id = update.message.message_id - 1  # Assuming the previous message has the keyboard
+                    except Exception as e:
+                        print(e)
+                    try:
+                        await context.bot.edit_message_reply_markup(
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            reply_markup=None
+                        )
+                    except Exception as e:
+                        print(f"Error removing inline keyboard: {e}")
                     await update.message.reply_text("The test will stop now....")
                     await start(update, context)
                 else:
@@ -680,11 +699,25 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # print(userID)
             user_data['part_1_minute'] = False
             user_data['part_3_minute'] = False
+            # try:
+            #     await query.edit_message_reply_markup(reply_markup=None)
+            # except Exception as e:
+            #     # print("error: await query.edit_message_reply_markup(reply_markup=None)")
+            #     pass
             try:
-                await query.edit_message_reply_markup(reply_markup=None)
+                # Find and remove the inline keyboard from the previous message
+                chat_id = update.effective_chat.id
+                message_id = update.message.message_id - 1  # Assuming the previous message has the keyboard
             except Exception as e:
-                # print("error: await query.edit_message_reply_markup(reply_markup=None)")
-                pass
+                print(e)
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=None
+                )
+            except Exception as e:
+                print(f"Error removing inline keyboard: {e}")
             await check_channel(update, context)
             try:
                 user = supabase.table('ielts_speaking_users').select('*').eq('user_id', user_id).execute()
@@ -706,28 +739,70 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"{update.effective_user.id} Main menu selected")
             user_data['part_1_minute'] = False
             user_data['part_3_minute'] = False
+            # try:
+            #     await query.edit_message_reply_markup(reply_markup=None)
+            # except Exception as e:
+            #     # print("error: await query.edit_message_reply_markup(reply_markup=None)")
+            #     pass
             try:
-                await query.edit_message_reply_markup(reply_markup=None)
+                #print("Find and remove the inline keyboard from the previous message")
+                chat_id = update.effective_chat.id
+                message_id = update.message.message_id - 1  # Assuming the previous message has the keyboard
             except Exception as e:
-                # print("error: await query.edit_message_reply_markup(reply_markup=None)")
-                pass
+                print(e)
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=None
+                )
+            except Exception as e:
+                print(f"Error removing inline keyboard: {e}")
             await show_main_menu(update, context, "Main menu")
         elif text == "Bot Channel":
             print(f"{update.effective_user.id} Bot channel selected")
+            # try:
+            #     await query.edit_message_reply_markup(reply_markup=None)
+            # except Exception as e:
+            #     # print("error: await query.edit_message_reply_markup(reply_markup=None)")
+            #     pass
             try:
-                await query.edit_message_reply_markup(reply_markup=None)
+                #print("Find and remove the inline keyboard from the previous message")
+                chat_id = update.effective_chat.id
+                message_id = update.message.message_id - 1  # Assuming the previous message has the keyboard
             except Exception as e:
-                # print("error: await query.edit_message_reply_markup(reply_markup=None)")
-                pass
+                print(e)
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=None
+                )
+            except Exception as e:
+                print(f"Error removing inline keyboard: {e}")
             text = "I have created a channel to share updates about the bot and provide the best resources for IELTS. Please join us at @IELTS_SpeakingBOT."
             await show_main_menu(update, context, text)
         elif text == "Show Progress":
             print(f"{update.effective_user.id} Show Progress selected")
+            # try:
+            #     await query.edit_message_reply_markup(reply_markup=None)
+            # except Exception as e:
+            #     # print("error: await query.edit_message_reply_markup(reply_markup=None)")
+            #     pass
             try:
-                await query.edit_message_reply_markup(reply_markup=None)
+                #print("Find and remove the inline keyboard from the previous message")
+                chat_id = update.effective_chat.id
+                message_id = update.message.message_id - 1  # Assuming the previous message has the keyboard
             except Exception as e:
-                # print("error: await query.edit_message_reply_markup(reply_markup=None)")
-                pass
+                print(e)
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=None
+                )
+            except Exception as e:
+                print(f"Error removing inline keyboard: {e}")
             await update.message.reply_text("Your progress in IELTS Speaking ")
             await show_progress(update, context)
         elif text == "Stop the Test":
@@ -736,39 +811,146 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 del user_data['part_1_topic_selection']
             except Exception as e:
                 pass
+            # try:
+            #     await query.edit_message_reply_markup(reply_markup=None)
+            # except Exception as e:
+            #     # print("error: await query.edit_message_reply_markup(reply_markup=None)")
+            #     pass
             try:
-                await query.edit_message_reply_markup(reply_markup=None)
+                #print("Find and remove the inline keyboard from the previous message")
+                chat_id = update.effective_chat.id
+                message_id = update.message.message_id - 1  # Assuming the previous message has the keyboard
             except Exception as e:
-                # print("error: await query.edit_message_reply_markup(reply_markup=None)")
-                pass
+                print(e)
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=None
+                )
+            except Exception as e:
+                print(f"Error removing inline keyboard: {e}")
             await update.message.reply_text("The test will stop now....")
             test_stop = True
             await user_data_update(update,context)
             await start(update, context)
         elif text == "Contact Me":
             print(f"{update.effective_user.id} Contact Me selected")
+            # try:
+            #     await query.edit_message_reply_markup(reply_markup=None)
+            # except Exception as e:
+            #     # print("error: await query.edit_message_reply_markup(reply_markup=None)")
+            #     pass
             try:
-                await query.edit_message_reply_markup(reply_markup=None)
+                #print("Find and remove the inline keyboard from the previous message")
+                chat_id = update.effective_chat.id
+                message_id = update.message.message_id - 1  # Assuming the previous message has the keyboard
             except Exception as e:
-                # print("error: await query.edit_message_reply_markup(reply_markup=None)")
-                pass
+                print(e)
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=None
+                )
+            except Exception as e:
+                print(f"Error removing inline keyboard: {e}")
             await update.message.reply_text("You can contact me at @ielts_pathway.")
         elif text == "Change language":
             print(f"{update.effective_user.id} change language selected")
+            # try:
+            #     await query.edit_message_reply_markup(reply_markup=None)
+            # except Exception as e:
+            #     # print("error: await query.edit_message_reply_markup(reply_markup=None)")
+            #     pass
             try:
-                await query.edit_message_reply_markup(reply_markup=None)
+                #print("Find and remove the inline keyboard from the previous message")
+                chat_id = update.effective_chat.id
+                message_id = update.message.message_id - 1  # Assuming the previous message has the keyboard
             except Exception as e:
-                # print("error: await query.edit_message_reply_markup(reply_markup=None)")
-                pass
+                print(e)
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=None
+                )
+            except Exception as e:
+                print(f"Error removing inline keyboard: {e}")
             await change_language(update, context)
         elif text == "Change voice":
             print(f"{update.effective_user.id} change voice selected")
+            # try:
+            #     await query.edit_message_reply_markup(reply_markup=None)
+            # except Exception as e:
+            #     # print("error: await query.edit_message_reply_markup(reply_markup=None)")
+            #     pass
             try:
-                await query.edit_message_reply_markup(reply_markup=None)
+                #print("Find and remove the inline keyboard from the previous message")
+                chat_id = update.effective_chat.id
+                message_id = update.message.message_id - 1  # Assuming the previous message has the keyboard
             except Exception as e:
-                # print("error: await query.edit_message_reply_markup(reply_markup=None)")
-                pass
+                print(e)
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=None
+                )
+            except Exception as e:
+                print(f"Error removing inline keyboard: {e}")
             await change_voice(update, context)
+        elif text == "Admin":
+            if update.effective_user.id in ADMIN_IDS:
+                keyboard = [
+                    [InlineKeyboardButton("Broadcast", callback_data="admin_broadcast"),
+                     InlineKeyboardButton("Bot Statistics", callback_data="admin_stats")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text("Admin options:", reply_markup=reply_markup)
+                # return ADMIN_OPTIONS
+            else:
+                await update.message.reply_text("You are not authorized to access admin options.")
+                text2 = "You are not authorized to access admin options."
+                return await show_main_menu(update, context, text2)
+        elif text == "IELTS Writing 📝":
+            await update.message.reply_text("Now you can evalaute your IELTS Writing essay using our IELTS Writing Evaluator Bot:\n\n@ielts_writing2_bot")
+        elif context.user_data.get('in_broadcast_mode', False):
+          print(f"Handling broadcast message")
+          if update.message.text == "Done":
+              print("Received 'Done' in broadcast mode")
+              if not context.user_data.get('broadcast_messages'):
+                  await update.message.reply_text("You haven't sent any messages to broadcast. Please send at least one message.")
+                  return
+
+              keyboard = [
+                  [InlineKeyboardButton("Confirm", callback_data="confirm_broadcast"),
+                   InlineKeyboardButton("Cancel", callback_data="cancel_broadcast")]
+              ]
+              reply_markup = InlineKeyboardMarkup(keyboard)
+              
+              await update.message.reply_text("Here's a preview of your broadcast messages:", reply_markup=reply_markup)
+              for message in context.user_data['broadcast_messages']:
+                  await send_message_copy(update.effective_chat.id, message, context)
+              
+              # Remove the "Done" and "Cancel" buttons
+              await update.message.reply_text("Please confirm or cancel the broadcast.", 
+                                              reply_markup=ReplyKeyboardRemove())
+              
+          elif update.message.text == "Cancel":
+              context.user_data['in_broadcast_mode'] = False
+              context.user_data.pop('broadcast_messages', None)
+              await show_main_menu(update, context, "Broadcast cancelled. Returning to main menu.")
+          else:
+              if 'broadcast_messages' not in context.user_data:
+                  context.user_data['broadcast_messages'] = []
+              context.user_data['broadcast_messages'].append(update.message)
+              await update.message.reply_text("Message added to broadcast. Send more messages or click 'Done' when finished.")
+          return
+        else:
+            await update.message.reply_text("Sorry, you should not send text messages while practicing speaking. You should only record your voice. for more assistance please contact me at @ielts_pathway.")
+
+    
     except Exception as e:
         text = ("🚨 message handler function ", e)
         await error_handling(update, context,text)
@@ -816,6 +998,7 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     file = await context.bot.get_file(file_id)
                     file_path = file.file_path
                     part_1_minute_part1 = user_data['part_1_minute_part_1']
+
                     voice_duration = update.message.voice.duration
                     if voice_duration > 58:
                         user_data['part_1_minute'] = True
@@ -824,7 +1007,6 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     else:
                         part_1_minute_part1.append(False)
                         user_data['part_1_minute'] = False
-                    
                     if voice_duration > 80:  # 1 minute and 30 seconds
                         await update.message.reply_text("Your answer is too long. Please record another answer shorter than 1 minute.")
                     else:
@@ -1312,7 +1494,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await user_data_update(update,context)
         elif query.data == f'{userID}rate_up':
             await query.edit_message_text("❤️")
-            
+            print("👍")
             share_message = (
                 f"Discover this IELTS Speaking Bot! It simulates the IELTS speaking test and provides detailed feedback about your speaking skills and estimated IELTS band score. Try it for free now: https://t.me/ielts_speakingAI_bot"
             )
@@ -1330,6 +1512,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await show_main_menu(update, context, text)
 
         elif query.data == f'{userID}rate_down':
+            print("👎")
             text = "I really appreciate your feedback. \nPlease contact me and tell me what was the problem and try to enhance your experience next time: \n@ielts_pathway"
             await show_main_menu(update, context, text)
 
@@ -1601,7 +1784,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif query.data == f'{userID}mock_test_translate_detailed_feedback':
             await query.edit_message_reply_markup(reply_markup=None)
             context.application.create_task(translate_mock_test_detailed_feedback(update, context))
-
+        elif query.data in ["confirm_broadcast", "cancel_broadcast"]:
+            await confirm_broadcast(update, context)
+        elif query.data == "admin_broadcast":
+        # Simulate the /broadcast command
+            await query.edit_message_text("/broadcast")
+            # return await broadcast(update, context)
+        elif query.data == "admin_stats":
+            # Implement bot statistics functionality here
+            await query.message.reply_text("Bot statistics functionality not implemented yet.")
+            text = "Bot statistics functionality not implemented yet."
+            await show_main_menu(update, context, text)
+        else:
+            await query.message.reply_text("Invalid admin option.")
+            text = "Invalid admin option."
+            await show_main_menu(update, context, text)
     except Exception as e:
         text = ("🚨 button handler function ", e)
         await error_handling(update, context,text)
@@ -1633,6 +1830,7 @@ async def change_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         text = ("🚨 change language", e)
         await error_handling(update, context,text)
+
 async def change_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Allows the user to change their preferred voice."""
     try:
@@ -1669,10 +1867,13 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, tex
     try:
         keyboard = [
             [KeyboardButton("Start Test")],
-            [KeyboardButton("Show Progress")],
+            [KeyboardButton("IELTS Writing 📝"),KeyboardButton("Show Progress")],
             [KeyboardButton("Contact Me"), KeyboardButton("Bot Channel")],
             [KeyboardButton("Change language"), KeyboardButton("Change voice")],
         ]
+        user_id = update.effective_user.id
+        if user_id in ADMIN_IDS:
+            keyboard.append([KeyboardButton("Admin")])
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
         await update.effective_message.reply_text(text, reply_markup=reply_markup)
     except Exception as e:
@@ -1727,6 +1928,7 @@ async def append_speaking_score(update: Update, context: ContextTypes.DEFAULT_TY
     except Exception as e:
         print(f"{update.effective_user.id} 🚨 An error occurred in appending speaking score function : {e}")
         return False
+
 async def show_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_user.id
@@ -1863,6 +2065,7 @@ async def check_user_attempts(update: Update, context: ContextTypes.DEFAULT_TYPE
         # In case of an error, we'll allow the attempt but won't update the database
         user_data['remaining_attempts'] = 5  # Set a default value in case of error
         return True
+
 async def convert_text_to_audio(text,examiner_voice):
     # global  examiner_voice
     try:
@@ -1882,6 +2085,7 @@ async def convert_text_to_audio(text,examiner_voice):
             'https://api.v7.unrealspeech.com/stream',
             headers={
                 'Authorization': f"Bearer {unreal_speech_api}" 
+                
             },
             json={
                 'Text': text,
@@ -1900,10 +2104,10 @@ async def convert_text_to_audio(text,examiner_voice):
             
             return 'audio.oga'
         else:
-            raise Exception(f"Failed to convert text to audio. Status code: {response.status_code}")
+            raise Exception(f"🚨 Failed to convert text to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
     except Exception as e:
         
-        print("convert text to audio")
+        print("convert text to audio second option")
         if not text.strip():
             raise ValueError("Input text contains no characters.")
         
@@ -1932,7 +2136,7 @@ async def convert_text_to_audio(text,examiner_voice):
             
             return 'audio.oga'
         else:
-            raise Exception(f"🚨 Failed to convert text to audio. Status code: {response.status_code}")
+            raise Exception(f"🚨 Failed to convert text to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
 # Function to convert audio to text using Deepgram STT API
 async def convert_audio_to_text(file_id, update, context):
     try:
@@ -2971,6 +3175,7 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
         questions_list = user_data.get('questions', [])
         answers_list = user_data.get('answers_list', {})
         one_minute = user_data['part_1_minute_part_1']
+
         print(f"{update.effective_user.id} user_targetes_score: ", targeted_score)
 
         # Send the sticker and waiting message
@@ -3019,9 +3224,11 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
             question_prompt = questions_list[i]
             print("one_minute: ",one_minute[i])
             user_data['part_1_minute'] = one_minute[i]
+            one_minute1 = one_minute[i]
             task_type = "ielts_part1"
 
-            processed_scores = await assess_speech_async(audio_url, question_prompt, task_type, context)
+            processed_scores = await assess_speech_async(audio_url, question_prompt, task_type, context,one_minute1)
+            # print(processed_scores)
             if processed_scores:
                 scores_list.append(processed_scores)
                 print(f"{update.effective_user.id} Assessment successful for answer {i + 1}")
@@ -3117,7 +3324,7 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
         text = ("🚨 show results part 1 function ", e)
         await error_handling(update, context,text)
 
-async def assess_speech_async(audio_url, question_prompt, task_type, context: ContextTypes.DEFAULT_TYPE):
+async def assess_speech_async(audio_url, question_prompt, task_type, context: ContextTypes.DEFAULT_TYPE,one_minute1):
     user_data = context.user_data.setdefault('user_data', {})
     try:
         # Download the voice file from the URL
@@ -3127,27 +3334,111 @@ async def assess_speech_async(audio_url, question_prompt, task_type, context: Co
         with open(filename, "wb") as file:
             file.write(response.content)
 
+        # loop = asyncio.get_running_loop()
+        # print("user_data['part_1_minute']: ",one_minute1)
+        # print("user_data['part_1_minute_part_1']: ",user_data['part_1_minute_part_1'])
+        # if one_minute1:  
+        #     print("use speech super API (part 1)")
+        #     scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
+        # else:
+        #     try:
+        #         scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompt)
+        #     except Exception as e:
+        #         print("🚨Error on Speech Ace API and switching to Speech Super API ", e)
+        #         scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
+        
         loop = asyncio.get_running_loop()
-        print("user_data['part_1_minute']: ",user_data['part_1_minute'])
-        print("user_data['part_1_minute_part_1']: ",user_data['part_1_minute_part_1'])
-        if user_data['part_1_minute']:  
-            print("use speech super API (part 1)")
-            scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
-        else:
-            scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompt)
-
+        # print("user_data['part_1_minute']: ",one_minute1)
+        # print("user_data['part_1_minute_part_1']: ",user_data['part_1_minute_part_1'])
+        try:
+            print("use speech super assess_speech3 API (part 1)")
+            scores, analysis_data = await loop.run_in_executor(executor, assess_speech3, filename, question_prompt, task_type)
+        except Exception as e:
+            print("🚨 Error on assess_speech3 speech super API and switching to Speech ace API ", e)
+            try:
+                scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompt)
+            except Exception as e:
+                print("🚨Error on Speech Ace API and switching to Speech Super API assess_speech2 ", e)
+                scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
+        # if one_minute1:  
+        #     print("use speech super assess_speech2 API (part 1)")
+        #     scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
+        # else:
+        #     try:
+        #         scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompt)
+        #     except Exception as e:
+        #         print("🚨Error on Speech Ace API and switching to Speech Super API ", e)
+        #         scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
+        # loop = asyncio.get_running_loop()
+        # if user_data['part_1_minute']:
+        #     print("use speech super API (part 1)")
+        #     # print(filename)
+        #     # print(question_prompt)
+        #     # print(task_type)
+            
+        #     scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
+        #     # print(scores)
+        #     # print("----------------")
+        #     # print(analysis_data)
+        #     response_json = scores
+        # else:
+        #     scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompt)
         if scores is None or analysis_data is None:
             raise Exception("🚨 Assessment failed")
 
         # Immediately append analysis_data to the analysis_list
         analysis_list = user_data.setdefault('analysis_list', [])
         analysis_list.append(analysis_data)
+        # if user_data['part_1_minute']:
+        #     if 'result' in response_json:
+        #         result = response_json['result']
+        #         scores = {
+        #             "overall": result.get("overall", 0),
+        #             "pronunciation": result.get("pronunciation", 0),
+        #             "fluency": result.get("fluency_coherence", 0),
+        #             "grammar": result.get("grammar", 0),
+        #             "vocabulary": result.get("lexical_resource", 0),
+        #             "relevance": result.get("relevance", 0),
+        #             "transcription": result.get("transcription", 0),
+        #             # "pause_filler": result.get("pause_filler", {}),
+        #         #     "sentences": [
+        #         #         {
+        #         #             "sentence": sentence.get("sentence", ""),
+        #         #             "pronunciation": sentence.get("pronunciation", "N/A"),
+        #         #             "grammar": sentence.get("grammar", {}).get("corrected", "")
+        #         #         }
+        #         #         for sentence in result.get("sentences", [])
+        #         #     ]
+        #         }
+            
+        #     os.remove(filename)
+        #     print(len(user_data['analysis_list']))
+        #     return scores
+        # else:
+        #     processed_scores = {
+        #         "overall": scores['ielts_score']['overall'],
+        #         "pronunciation": scores['ielts_score']['pronunciation'],
+        #         "fluency": scores['ielts_score']['fluency'],
+        #         "grammar": scores['ielts_score']['grammar'],
+        #         "vocabulary": scores['ielts_score']['vocabulary'],
+        #         "relevance": scores['relevance']['class'],
+        #         "transcription": scores['transcription'],
+        #     }
 
-        if user_data['part_1_minute']:
+        #     os.remove(filename)
+        #     print(len(user_data['analysis_list']))
+        #     return processed_scores
+        # if one_minute1:
+        #     processed_scores = process_speech_super_scores(scores)
+        #     print("process_speech_super_scores: ",processed_scores)
+        # else:
+        #     processed_scores = process_speechace_scores(scores)
+        #     print("process_speechace_scores: ",processed_scores)
+        try:
             processed_scores = process_speech_super_scores(scores)
-        else:
+        except Exception as e:
+            print("🚨 process_speech_super_scores(scores): ", e)
             processed_scores = process_speechace_scores(scores)
-
         os.remove(filename)
         print(len(user_data['analysis_list']))
         return processed_scores
@@ -3157,16 +3448,16 @@ async def assess_speech_async(audio_url, question_prompt, task_type, context: Co
 
 def process_speech_super_scores(response_json):
     # if 'result' in response_json:
+        result = response_json
     #     result = response_json['result']
-        result=response_json 
         return {
             "overall": result.get("overall", 0),
             "pronunciation": result.get("pronunciation", 0),
             "fluency": result.get("fluency", 0),
-            "grammar": result.get("grammar", "0"),
+            "grammar": result.get("grammar", 0),
             "vocabulary": result.get("vocabulary", 0),
             "relevance": result.get("relevance", "N/A"),
-            "transcription": result.get("transcription", "N/A"),
+            "transcription": result.get("transcription", 0),
         }
     # return None
 
@@ -3183,6 +3474,7 @@ def process_speechace_scores(scores):
 
 async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE, waiting_message):
     try:
+        print("detailed part 1 feedback")
         user_data = context.user_data.setdefault('user_data', {})
         await score_voice(update, context)
         examiner_voice = user_data['examiner_voice']
@@ -3200,6 +3492,7 @@ async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAU
             analysis_data = analysis_list[i]
             user_voice_url = voice_urls[i]
             user_data['part_1_minute'] = one_minute[i]
+            print("detailed user_data['part_1_minute']: ",user_data['part_1_minute'])
             prompt = f"Question: {question}\nUser Answer: {user_answer}\nAnalysis Data: {analysis_data}\n\n"
             prompt += """Please provide a detailed analysis of the user's answer, considering the pronunciation, fluency, grammar, vocabulary, and relevance. Generate useful feedback that helps the user understand their performance in depth.
             You should organize it in a clear and good feedback to the IELTS Candidate. They expect to know their mistakes and improve next time. Also, it is a good idea to write the question in the feedback and the answer and then start your analysis.
@@ -3211,11 +3504,15 @@ async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAU
             await send_long_message(update, context, feedback)
 
             # Use asyncio.to_thread for CPU-bound operations
-            if user_data.get('part_1_minute', False):
+            # if user_data['part_1_minute']:
+            #     await asyncio.to_thread(generate_pronunciation_visualization2, analysis_data)
+            # else:
+            #     await asyncio.to_thread(generate_pronunciation_visualization, analysis_data)
+            try:
                 await asyncio.to_thread(generate_pronunciation_visualization2, analysis_data)
-            else:
+            except Exception as e:
+                print("asyncio.to_thread(generate_pronunciation_visualization2, analysis_data): ", e)
                 await asyncio.to_thread(generate_pronunciation_visualization, analysis_data)
-
             with open('pronunciation_visualization_with_padding.png', 'rb') as image_file:
                 await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_file)
 
@@ -5922,6 +6219,110 @@ async def _translate_and_send_mock_test_detailed_feedback(update, context, user_
     finally:
         await context.bot.delete_message(chat_id=chat_id, message_id=waiting_message.message_id)
         await context.bot.send_message(chat_id=chat_id, text="What would you like to do next?", reply_markup=reply_markup)   
+#------------------------- Broadcasting ----------------------------------
+
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  user_id = update.effective_user.id
+  if user_id not in ADMIN_IDS:
+      await update.message.reply_text("You are not authorized to use this command.")
+      return
+
+  context.user_data['broadcast_messages'] = []
+  context.user_data['in_broadcast_mode'] = True
+  
+  keyboard = [
+      [KeyboardButton("Done"), KeyboardButton("Cancel")]
+  ]
+  reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+  
+  await update.message.reply_text(
+      "Please send the messages you want to broadcast. You can send multiple messages (text, image, or video). "
+      "When you're finished, click 'Done'. To cancel the broadcast, click 'Cancel'.",
+      reply_markup=reply_markup
+  )
+async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  if update.message.text and update.message.text.lower() == '/done':
+      if not context.user_data.get('broadcast_messages'):
+          await update.message.reply_text("You haven't sent any messages to broadcast. Please send at least one message.")
+          return
+
+      keyboard = [
+          [InlineKeyboardButton("Confirm", callback_data="confirm_broadcast"),
+           InlineKeyboardButton("Cancel", callback_data="cancel_broadcast")]
+      ]
+      reply_markup = InlineKeyboardMarkup(keyboard)
+      
+      await update.message.reply_text("Here's a preview of your broadcast messages:", reply_markup=reply_markup)
+      for message in context.user_data['broadcast_messages']:
+          await message.copy(chat_id=update.effective_chat.id)
+      
+      # Exit broadcast mode
+      context.user_data['in_broadcast_mode'] = False
+  else:
+      context.user_data['broadcast_messages'].append(update.message)
+      await update.message.reply_text("Message added to broadcast. Send more messages or /done when finished.")
+
+async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  query = update.callback_query
+  await query.answer()
+  
+  if query.data == "confirm_broadcast":
+      await query.edit_message_text("Broadcasting messages to all users...")
+      
+      user_ids = await get_all_user_ids()
+      broadcast_messages = context.user_data['broadcast_messages']
+      success_count = 0
+      fail_count = 0
+      
+      for i in range(0, len(user_ids), 5):
+          batch = user_ids[i:i+5]
+          tasks = [send_broadcast_messages(broadcast_messages, user_id, context) for user_id in batch]
+          results = await asyncio.gather(*tasks, return_exceptions=True)
+          
+          for result in results:
+              if isinstance(result, Exception):
+                  fail_count += 1
+              else:
+                  success_count += 1
+          
+          await asyncio.sleep(1)
+      
+      await query.edit_message_text(f"Broadcast complete.\nSuccessful: {success_count}\nFailed: {fail_count}")
+  else:
+      await query.edit_message_text("Broadcast cancelled.")
+
+  # Clear broadcast data and return to main menu
+  context.user_data.pop('broadcast_messages', None)
+  context.user_data['in_broadcast_mode'] = False
+  await show_main_menu(update, context, "Returning to main menu.")
+async def send_message_copy(chat_id: int, message, context: ContextTypes.DEFAULT_TYPE):
+  if message.text:
+      await message.copy(chat_id)
+  elif message.photo:
+      await context.bot.send_photo(chat_id, message.photo[-1].file_id, caption=message.caption)
+  elif message.video:
+      await context.bot.send_video(chat_id, message.video.file_id, caption=message.caption)
+  elif message.document:
+      await context.bot.send_document(chat_id, message.document.file_id, caption=message.caption)
+  # Add more elif conditions for other types of media if needed
+async def send_broadcast_messages(messages, user_id, context: ContextTypes.DEFAULT_TYPE):
+  try:
+      for message in messages:
+          await send_message_copy(user_id, message, context)
+      return True
+  except Exception as e:
+      print(f"Failed to send broadcast to user {user_id}: {e}")
+      raise e
+
+async def get_all_user_ids():
+    # Implement this function to fetch user IDs from your Supabase database
+    response = supabase.table('ielts_speaking_users').select('user_id').execute()
+    return [record['user_id'] for record in response.data]
+# async def get_all_user_ids():
+#   # Implement this function to fetch user IDs from your database
+#   # For testing, you can return a list with just one user ID
+#   return [5357232217]  # Replace with actual implementation
+
 def main():
     print("main")
     request = HTTPXRequest(
@@ -5952,8 +6353,14 @@ def main():
     application.add_handler(CommandHandler("language", change_language))
     application.add_handler(CommandHandler("voice", change_voice))
     button_handler_instance = CallbackQueryHandler(button_handler)
+    # application.add_handler(CommandHandler("broadcast", broadcast_command))
     application.add_handler(button_handler_instance)
-
+    application.add_handler(CommandHandler("broadcast", broadcast_command))
+    message_handler_instance = MessageHandler(
+        filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL,
+        message_handler
+    )
+    application.add_handler(message_handler_instance)
     application.run_polling()
 
 if __name__ == '__main__':
