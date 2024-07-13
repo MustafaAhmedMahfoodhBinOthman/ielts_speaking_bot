@@ -4369,6 +4369,7 @@ async def assess_part3_speech_async(audio_url, question_prompt, task_type, conte
         try:
             print("use speech super assess_speech3 API (part 3)")
             scores, analysis_data = await loop.run_in_executor(executor, assess_speech3, filename, question_prompt, task_type)
+            response_json = scores
         except Exception as e:
             print("🚨 Error on assess_speech3 speech super API and switching to Speech ace API ", e)
             try:
@@ -4376,6 +4377,7 @@ async def assess_part3_speech_async(audio_url, question_prompt, task_type, conte
             except Exception as e:
                 print("🚨Error on Speech Ace API and switching to Speech Super API assess_speech2 ", e)
                 scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
+                response_json = scores
         if scores is None or analysis_data is None:
             raise Exception("🚨 Assessment failed")
 
@@ -5483,6 +5485,7 @@ async def assess_part1_mock_async(audio_urls, question_prompts, task_type, conte
         try:
             print("use speech super assess_speech3 API (mock test part 1)")
             scores, analysis_data = await loop.run_in_executor(executor, assess_speech3, filename, question_prompts, task_type)
+            response_json = scores
         except Exception as e:
             print("🚨 Error on assess_speech3 speech super API and switching to Speech ace API ", e)
             try:
@@ -5490,6 +5493,7 @@ async def assess_part1_mock_async(audio_urls, question_prompts, task_type, conte
             except Exception as e:
                 print("🚨Error on Speech Ace API and switching to Speech Super API assess_speech2 ", e)
                 scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompts, task_type)
+                response_json = scores
         if scores is None or analysis_data is None:
             raise Exception("🚨 Assessment failed")
 
@@ -5638,6 +5642,7 @@ async def assess_part3_mock_async(audio_urls, question_prompts, task_type, conte
         try:
             print("use speech super assess_speech3 API (mock test part 3)")
             scores, analysis_data = await loop.run_in_executor(executor, assess_speech3, filename, question_prompts, task_type)
+            response_json = scores
         except Exception as e:
             print("🚨 Error on assess_speech3 speech super API and switching to Speech ace API ", e)
             try:
@@ -5645,6 +5650,7 @@ async def assess_part3_mock_async(audio_urls, question_prompts, task_type, conte
             except Exception as e:
                 print("🚨Error on Speech Ace API and switching to Speech Super API assess_speech2 ", e)
                 scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompts, task_type)
+                response_json = scores
         if scores is None or analysis_data is None:
             raise Exception("🚨 Assessment failed")
 
