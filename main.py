@@ -3488,7 +3488,7 @@ async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAU
         answers_list = user_data.get('answers_list', [])
         analysis_list = user_data.get('analysis_list', [])
         voice_urls = user_data.get('voice_urls', [])
-        one_minute = user_data['part_1_minute_part_1']
+        # one_minute = user_data['part_1_minute_part_1']
         user_data['detailed_feedback'] = []
         detailed_feedback = user_data['detailed_feedback']
 
@@ -3497,7 +3497,7 @@ async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAU
             user_answer = answers_list[i]
             analysis_data = analysis_list[i]
             user_voice_url = voice_urls[i]
-            user_data['part_1_minute'] = one_minute[i]
+            # user_data['part_1_minute'] = one_minute[i]
             print("detailed user_data['part_1_minute']: ",user_data['part_1_minute'])
             prompt = f"Question: {question}\nUser Answer: {user_answer}\nAnalysis Data: {analysis_data}\n\n"
             prompt += """Please provide a detailed analysis of the user's answer, considering the pronunciation, fluency, grammar, vocabulary, and relevance. Generate useful feedback that helps the user understand their performance in depth.
