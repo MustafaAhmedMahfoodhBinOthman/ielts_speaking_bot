@@ -6763,44 +6763,244 @@ async def get_all_user_ids():
 #     except Exception as e:
 #         print("generate bot statistics ",e)
         
+# def parse_date(date_string):
+#   try:
+#       return parse(date_string)
+#   except:
+#       return None
+# def generate_bot_statistics():
+#   try:
+#       now = datetime.now(tzutc())
+#       today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+#       yesterday_start = today_start - timedelta(days=1)
+#       # Fetch users and scores data from Supabase
+#       users = supabase.table("ielts_speaking_users").select("*").execute()
+#       scores = supabase.table("ielts_speaking_scores").select("*").execute()
+
+#       # Total users
+#        # Get total users using COUNT query
+#       total_users_result = supabase.table("ielts_speaking_users").select("*", count="exact").execute()
+#       total_users = total_users_result.count
+
+#       # Users registered in different time periods
+#       users_today = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 0)
+#       users_yesterday = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 1)
+#       users_last_week = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 7)
+#       users_last_month = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 30)
+
+#     #   # Practice statistics
+#     #   practices_today = sum(user['practice_count'] for user in users.data 
+#     #                         if user.get('last_attempt_time') and 
+#     #                         parse_date(user['last_attempt_time']) >= today_start)
+      
+#     #   practices_yesterday = sum(user['practice_count'] for user in users.data 
+#     #                             if user.get('last_attempt_time') and 
+#     #                             yesterday_start <= parse_date(user['last_attempt_time']) < today_start)
+
+#     #   # Users who practiced today
+#     #   users_practiced_today = sum(1 for user in users.data 
+#     #                               if user.get('last_attempt_time') and 
+#     #                               parse_date(user['last_attempt_time']) >= today_start)
+
+#     #   # Users who practiced yesterday
+#     #   users_practiced_yesterday = sum(1 for user in users.data 
+#     #                                   if user.get('last_attempt_time') and 
+#     #                                   yesterday_start <= parse_date(user['last_attempt_time']) < today_start)
+#        # Practice statistics
+#       practices_today = 0
+#       practices_yesterday = 0
+#       users_practiced_today = 0
+#       users_practiced_yesterday = 0  
+#       for user in users.data:
+#           last_attempt = parse_date(user.get('last_attempt_time'))
+#           if last_attempt:
+#               if last_attempt >= today_start:
+#                   practices_today += 1
+#                   users_practiced_today += 1
+#               elif yesterday_start <= last_attempt < today_start:
+#                   practices_yesterday += 1
+#                   users_practiced_yesterday += 1
+#       users_practiced_at_least_once = sum(1 for user in users.data if user['practice_count'] > 0)
+#       users_never_practiced = sum(1 for user in users.data if user['practice_count'] == 0)
+#       users_practiced_more_than_10 = sum(1 for user in users.data if user['practice_count'] > 10)
+
+#       # Users who practiced today
+#     #   users_practiced_today = sum(1 for user in users.data if user['last_practice_date'] and parse(user['last_practice_date']).date() == now.date())
+
+#       # Users in channel
+#       users_in_channel = sum(1 for user in users.data if user['in_channel'] is True)
+
+#       # Users by native language and English level
+#       users_by_language = defaultdict(int)
+#       users_by_level = defaultdict(int)
+#       for user in users.data:
+#           lang = user.get('native_language', '').strip()
+#           users_by_language[lang if lang else 'Unknown'] += 1
+#           level = user.get('english_level', '').strip()
+#           users_by_level[level if level else 'Unknown'] += 1
+
+#       # Total practice count
+#       total_practice_count = sum(user['practice_count'] for user in users.data if user['practice_count'])
+
+#       # Average scores
+#       part1_scores = [score['part1_score'] for score in scores.data if score['part1_score']]
+#       part2_scores = [score['part2_score'] for score in scores.data if score['part2_score']]
+#       part3_scores = [score['part3_score'] for score in scores.data if score['part3_score']]
+#       mock_test_scores = [score['mock_test_score'] for score in scores.data if score['mock_test_score']]
+
+#       avg_scores = {
+#           'part1': sum(part1_scores) / len(part1_scores) if part1_scores else 0,
+#           'part2': sum(part2_scores) / len(part2_scores) if part2_scores else 0,
+#           'part3': sum(part3_scores) / len(part3_scores) if part3_scores else 0,
+#           'mock_test': sum(mock_test_scores) / len(mock_test_scores) if mock_test_scores else 0,
+#       }
+
+#       # Generate the report
+#       report = f"""
+# 📊 Bot Statistics Report
+
+# 👥 Total Users: {total_users}
+# 🆕 New Users:
+# • Today: {users_today}
+# • Yesterday: {users_yesterday}
+# • Last Week: {users_last_week}
+# • Last Month: {users_last_month}
+
+# 🏋️ Practice Statistics:
+# • Total Practices: {total_practice_count}
+# • Practices Today: {practices_today}
+# • Users Practiced Today: {users_practiced_today}
+# • Practices Yesterday: {practices_yesterday}
+# • Users Practiced Yesterday: {users_practiced_yesterday}
+
+# 👨‍🎓 User Practice Breakdown:
+# • Practiced at least once: {users_practiced_at_least_once} ({users_practiced_at_least_once/total_users*100:.1f}%)
+# • Never practiced: {users_never_practiced} ({users_never_practiced/total_users*100:.1f}%)
+# • Practiced more than 10 times: {users_practiced_more_than_10} ({users_practiced_more_than_10/total_users*100:.1f}%)
+
+# 📺 Channel Membership:
+# • Users in Channel: {users_in_channel} ({users_in_channel/total_users*100:.1f}%)
+
+# 🌎 Users by Native Language:
+# {chr(10).join(f"  • {lang}: {count} ({count/total_users*100:.1f}%)" for lang, count in sorted(users_by_language.items(), key=lambda x: x[1], reverse=True))}
+
+# 🎓 Users by English Level:
+# {chr(10).join(f"  • {level}: {count} ({count/total_users*100:.1f}%)" for level, count in sorted(users_by_level.items(), key=lambda x: x[1], reverse=True))}
+
+# 📈 Average Scores:
+# • Part 1: {avg_scores['part1']:.2f}
+# • Part 2: {avg_scores['part2']:.2f}
+# • Part 3: {avg_scores['part3']:.2f}
+# • Mock Test: {avg_scores['mock_test']:.2f}
+# """
+
+#       return report
+#   except Exception as e:
+#       print("generate bot statistics ", e)
+#       return "An error occurred while generating statistics."
 def parse_date(date_string):
+  if not date_string:
+      return None
   try:
-      return parse(date_string)
+      dt = parse(date_string)
+      return dt.replace(tzinfo=tzutc()) if dt.tzinfo is None else dt
   except:
       return None
+
 def generate_bot_statistics():
   try:
       now = datetime.now(tzutc())
+      today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+      yesterday_start = today_start - timedelta(days=1)
+
+      # Get total users using COUNT query
+      total_users_result = supabase.table("ielts_speaking_users").select("*", count="exact").execute()
+      total_users = total_users_result.count
 
       # Fetch users and scores data from Supabase
       users = supabase.table("ielts_speaking_users").select("*").execute()
       scores = supabase.table("ielts_speaking_scores").select("*").execute()
 
-      # Total users
-      total_users = len(users.data)
-
       # Users registered in different time periods
-      users_today = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 0)
-      users_yesterday = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 1)
-      users_last_week = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 7)
-      users_last_month = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 30)
+      users_today = sum(1 for user in users.data if parse_date(user['start_date']) and (now - parse_date(user['start_date'])).days == 0)
+      users_yesterday = sum(1 for user in users.data if parse_date(user['start_date']) and (now - parse_date(user['start_date'])).days == 1)
+      users_last_week = sum(1 for user in users.data if parse_date(user['start_date']) and (now - parse_date(user['start_date'])).days <= 7)
+      users_last_month = sum(1 for user in users.data if parse_date(user['start_date']) and (now - parse_date(user['start_date'])).days <= 30)
 
-        # Practice statistics
-      practices_today = sum(1 for user in users.data if user.get('last_attempt_time') and 
-                            parse_date(user['last_attempt_time']).date() == now.date())
-    #   practices_yesterday = sum(1 for user in users.data if user.get('last_attempt_time') and 
-                                # parse_date(user['last_attempt_time']).date() == (now - timedelta(days=1)).date())
+      # Practice statistics (completed tests)
+      completed_practices_today = 0
+      completed_practices_yesterday = 0
+      users_completed_today = set()
+      users_completed_yesterday = set()
+      practice_types = defaultdict(int)
+      practice_hours = defaultdict(int)
 
-      # Users who practiced today
-      users_practiced_today = sum(1 for user in users.data if user.get('last_attempt_time') and 
-                                  parse_date(user['last_attempt_time']).date() == now.date())
-      
-      users_practiced_at_least_once = sum(1 for user in users.data if user['practice_count'] > 0)
-      users_never_practiced = sum(1 for user in users.data if user['practice_count'] == 0)
-      users_practiced_more_than_10 = sum(1 for user in users.data if user['practice_count'] > 10)
+      for score in scores.data:
+          user_id = score.get('user_id')
+          for date_field, type_name in [('part1_date', 'Part 1'), ('part2_date', 'Part 2'), ('part3_date', 'Part 3'), ('mock_test_date', 'Mock Test')]:
+              practice_date = parse_date(score.get(date_field))
+              if practice_date:
+                  practice_types[type_name] += 1
+                  practice_hours[practice_date.hour] += 1
+                  if practice_date >= today_start:
+                      completed_practices_today += 1
+                      users_completed_today.add(user_id)
+                  elif yesterday_start <= practice_date < today_start:
+                      completed_practices_yesterday += 1
+                      users_completed_yesterday.add(user_id)
 
-      # Users who practiced today
-    #   users_practiced_today = sum(1 for user in users.data if user['last_practice_date'] and parse(user['last_practice_date']).date() == now.date())
+      # Practice attempts (from ielts_speaking_users table)
+      practice_attempts_today = 0
+      practice_attempts_yesterday = 0
+      users_attempted_today = set()
+      users_attempted_yesterday = set()
+
+      for user in users.data:
+          last_practice_date = parse_date(user.get('last_practice_date'))
+          if last_practice_date:
+              if last_practice_date >= today_start:
+                  practice_attempts_today += 1
+                  users_attempted_today.add(user['user_id'])
+              elif yesterday_start <= last_practice_date < today_start:
+                  practice_attempts_yesterday += 1
+                  users_attempted_yesterday.add(user['user_id'])
+
+      # Total practice statistics
+      total_practices_today = completed_practices_today + practice_attempts_today
+      total_practices_yesterday = completed_practices_yesterday + practice_attempts_yesterday
+      total_users_practiced_today = len(users_completed_today)
+      total_users_practiced_yesterday = len(users_completed_yesterday)
+
+      # Total practice count
+      total_completed_practices = sum(1 for score in scores.data for date_field in ['part1_date', 'part2_date', 'part3_date', 'mock_test_date'] if score.get(date_field))
+      total_practice_attempts = sum(1 for user in users.data if user.get('last_practice_date'))
+      total_practice_count = total_completed_practices + total_practice_attempts
+
+      # Calculate average practices per active user
+      active_users = total_users_practiced_today + total_users_practiced_yesterday
+      total_recent_practices = total_practices_today + total_practices_yesterday
+      avg_practices_per_active_user = total_recent_practices / active_users if active_users > 0 else 0
+
+      # Find most active practice type
+      most_active_practice_type = max(practice_types, key=practice_types.get)
+
+      # Find time of day with most practice activity
+      most_active_hour = max(practice_hours, key=practice_hours.get)
+
+      # Users who practiced at least once, never practiced, and practiced more than 10 times
+      user_practice_counts = defaultdict(int)
+      for score in scores.data:
+          user_id = score.get('user_id')
+          for date_field in ['part1_date', 'part2_date', 'part3_date', 'mock_test_date']:
+              if score.get(date_field):
+                  user_practice_counts[user_id] += 1
+      for user in users.data:
+          if user.get('last_practice_date'):
+              user_practice_counts[user['user_id']] += 1
+
+      users_practiced_at_least_once = sum(1 for count in user_practice_counts.values() if count > 0)
+      users_never_practiced = total_users - users_practiced_at_least_once
+      users_practiced_more_than_10 = sum(1 for count in user_practice_counts.values() if count > 10)
 
       # Users in channel
       users_in_channel = sum(1 for user in users.data if user['in_channel'] is True)
@@ -6813,9 +7013,6 @@ def generate_bot_statistics():
           users_by_language[lang if lang else 'Unknown'] += 1
           level = user.get('english_level', '').strip()
           users_by_level[level if level else 'Unknown'] += 1
-
-      # Total practice count
-      total_practice_count = sum(user['practice_count'] for user in users.data if user['practice_count'])
 
       # Average scores
       part1_scores = [score['part1_score'] for score in scores.data if score['part1_score']]
@@ -6830,7 +7027,7 @@ def generate_bot_statistics():
           'mock_test': sum(mock_test_scores) / len(mock_test_scores) if mock_test_scores else 0,
       }
 
-      # Generate the report
+       # Generate the report
       report = f"""
 📊 Bot Statistics Report
 
@@ -6843,8 +7040,19 @@ def generate_bot_statistics():
 
 🏋️ Practice Statistics:
 • Total Practices: {total_practice_count}
-• Practices Today: {practices_today}
-• Users Practiced Today: {users_practiced_today}
+  ◦ Practices with result: {total_completed_practices}
+  ◦ Practices without result: {total_practice_attempts}
+• Practices Today: {total_practices_today}
+  ◦ Practices with result: {completed_practices_today}
+  ◦ Practices without result: {practice_attempts_today}
+• Users Practiced Today: {total_users_practiced_today}
+• Practices Yesterday: {total_practices_yesterday}
+  ◦ Practices with result: {completed_practices_yesterday}
+  ◦ Practices without result: {practice_attempts_yesterday}
+• Users Practiced Yesterday: {total_users_practiced_yesterday}
+• Average Practices per Active User: {avg_practices_per_active_user:.2f}
+• Most Active Practice Type: {most_active_practice_type}
+• Most Active Hour of the Day: {most_active_hour:02d}:00 - {(most_active_hour + 1) % 24:02d}:00 UTC
 
 👨‍🎓 User Practice Breakdown:
 • Practiced at least once: {users_practiced_at_least_once} ({users_practiced_at_least_once/total_users*100:.1f}%)
@@ -6871,7 +7079,6 @@ def generate_bot_statistics():
   except Exception as e:
       print("generate bot statistics ", e)
       return "An error occurred while generating statistics."
-
 
 # Usage in your bot
 # @bot.on_callback_query(filters.regex("^admin_stats$"))
