@@ -7,6 +7,7 @@ from supabase import create_client, Client
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton,ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.error import BadRequest, NetworkError, TimedOut
+from telegram.error import Forbidden, TelegramError
 from datetime import datetime, timedelta
 from telegram.request import HTTPXRequest
 from groq import Groq
@@ -365,6 +366,7 @@ async def user_data_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data['part_1_minute'] = False
     user_data['part_3_minute'] = False
     user_data['test_stop'] = False
+    user_data['continue_countdown'] =True
     user_data['current_question_index'] = 0          
     print(f"{update.effective_user.id} user_data has been updated") 
 async def error_handling(update: Update, context: ContextTypes.DEFAULT_TYPE,error_message):
@@ -839,7 +841,32 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"Error removing inline keyboard: {e}")
             await update.message.reply_text("The test will stop now....")
-            test_stop = True
+            user_data['test_stop'] = True
+            try:
+                user_data['continue_countdown'] = False  # Stop the countdown
+
+                messages_to_delete = [
+                    'part2_question_message_id',
+                    'part2_audio_message_id',
+                    'part2_preparation_message_id',
+                    'part2_waiting_message_id',
+                    'part2_countdown_message_id',
+                    'part2_recording_message_id'  # Add this if you want to delete the recording message too
+                ]
+
+                for message_type in messages_to_delete:
+                    message_id = user_data.get(message_type)
+                    if message_id:
+                        try:
+                            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=message_id)
+                        except BadRequest as e:
+                            if "Message to delete not found" not in str(e):
+                                print(f"{update.effective_user.id} 🚨 Error deleting message: {str(e)}")
+                        finally:
+                            # Clear the message ID from user_data regardless of whether deletion was successful
+                            user_data[message_type] = None
+            except Exception as e:
+                print(e)
             await user_data_update(update,context)
             await start(update, context)
         elif text == "Contact Me":
@@ -956,7 +983,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
               await update.message.reply_text("Message added to broadcast. Send more messages or click 'Done' when finished.")
           return
         else:
-            await update.message.reply_text("Sorry, you should not send text messages while practicing speaking. You should only record your voice. for more assistance please contact me at @ielts_pathway.")
+            print("I'm sorry, but while practicing speaking, it's best to only record your voice instead of sending text messages. If you need further assistance, please reach out to me at @ielts_pathway.")
+            await update.message.reply_text("I'm sorry, but while practicing speaking, it's best to only record your voice instead of sending text messages. If you need further assistance, please reach out to me at @ielts_pathway.")
 
     
     except Exception as e:
@@ -1170,6 +1198,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # print("r",userID)
         query = update.callback_query
         try:
+            # await query.answer()
             await query.answer()
         except BadRequest as e:
             print(f"{update.effective_user.id} 🚨 Error answering callback query: {str(e)}")
@@ -1465,18 +1494,54 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_reply_markup(reply_markup=None)
             asyncio.create_task(show_result2(update, context))
 
+        # elif query.data == f'{userID}change_question':
+        #     try:
+        #         print("change_question")
+                
+        #         user_data = context.user_data.get('user_data', {})
+        #         for message_type in ['part2_question_message_id', 'part2_audio_message_id', 'part2_preparation_message_id', 'part2_waiting_message_id']:
+        #             message_id = user_data.get(message_type)
+        #             if message_id:
+        #                 await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=message_id)
+        #     except BadRequest as e:
+        #         print(f"{update.effective_user.id} 🚨 Error deleting message: {str(e)}")
+            
+        #     asyncio.create_task(start_part2_test(update, context))
         elif query.data == f'{userID}change_question':
             try:
+                print("change_question")
+                
                 user_data = context.user_data.get('user_data', {})
-                for message_type in ['part2_question_message_id', 'part2_audio_message_id', 'part2_preparation_message_id', 'part2_waiting_message_id']:
+                user_data['continue_countdown'] = False  # Stop the countdown
+
+                messages_to_delete = [
+                    'part2_question_message_id',
+                    'part2_audio_message_id',
+                    'part2_preparation_message_id',
+                    'part2_waiting_message_id',
+                    'part2_countdown_message_id',
+                    'part2_recording_message_id'  # Add this if you want to delete the recording message too
+                ]
+
+                for message_type in messages_to_delete:
                     message_id = user_data.get(message_type)
                     if message_id:
-                        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=message_id)
-            except BadRequest as e:
-                print(f"{update.effective_user.id} 🚨 Error deleting message: {str(e)}")
-            
-            asyncio.create_task(start_part2_test(update, context))
-            
+                        try:
+                            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=message_id)
+                        except BadRequest as e:
+                            if "Message to delete not found" not in str(e):
+                                print(f"{update.effective_user.id} 🚨 Error deleting message: {str(e)}")
+                        finally:
+                            # Clear the message ID from user_data regardless of whether deletion was successful
+                            user_data[message_type] = None
+
+                # Wait a short time to ensure the countdown loop has stopped
+                await asyncio.sleep(0.5)
+                
+                # Start a new Part 2 test
+                asyncio.create_task(start_part2_test(update, context))
+            except Exception as e:
+                print(f"{update.effective_user.id} 🚨 Error in change_question: {str(e)}")
         elif query.data == f'{userID}detailed2_results':
             animated_emoji = "⏳"
             waiting_message = await context.bot.send_message(chat_id=update.effective_chat.id, text=animated_emoji)
@@ -1502,7 +1567,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await user_data_update(update,context)
         elif query.data == f'{userID}rate_up':
             await query.edit_message_text("❤️")
-            print("👍")
+            print(f"{userID} 👍")
             share_message = (
                 f"Discover this IELTS Speaking Bot! It simulates the IELTS speaking test and provides detailed feedback about your speaking skills and estimated IELTS band score. Try it for free now: https://t.me/ielts_speakingAI_bot"
             )
@@ -1520,7 +1585,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await show_main_menu(update, context, text)
 
         elif query.data == f'{userID}rate_down':
-            print("👎")
+            print(f"{userID} 👎")
             text = "I really appreciate your feedback. \nPlease contact me and tell me what was the problem and try to enhance your experience next time: \n@ielts_pathway"
             await show_main_menu(update, context, text)
 
@@ -1867,6 +1932,7 @@ async def change_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = ("🚨 changing voice function ", e)
         await error_handling(update, context,text)
 # Helper function to ask for test part
+blocked_users = set()
 async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, text):
     """Displays the main menu with options: Start Test, Show Progress, Contact Me."""
     print(f"{update.effective_user.id} Showing main menu")
@@ -1882,6 +1948,13 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, tex
             keyboard.append([KeyboardButton("Admin")])
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
         await update.effective_message.reply_text(text, reply_markup=reply_markup)
+        if user_id in blocked_users:
+          blocked_users.remove(user_id)
+    except Forbidden as e:
+      if user_id not in blocked_users:
+          username = update.effective_user.username
+          print(f"ID: {user_id} Username: {username} | Bot was blocked by the user")
+          blocked_users.add(user_id)
     except Exception as e:
         text = ("🚨 show main menu function ",e)
         # await update.message.reply_text(issue_message)
@@ -2072,79 +2145,177 @@ async def check_user_attempts(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_data['remaining_attempts'] = 5  # Set a default value in case of error
         return True
 
-async def convert_text_to_audio(text,examiner_voice):
-    # global  examiner_voice
-    try:
-        # global  examiner_voice
-        # await score_voice(update, context)
-        print("convert text to audio")
-        if not text.strip():
-            raise ValueError("🚨 Input text contains no characters.")
-        # user_data = context.user_data.setdefault('user_data', {})
-        # print("user_data['examiner_voice'] ",user_data['examiner_voice'])
-        # examiner_voice = user_data['examiner_voice']
-        if examiner_voice == "":
-            examiner_voice = "Liv" 
+# async def convert_text_to_audio(text,examiner_voice):
+#     # global  examiner_voice
+#     try:
+#         # global  examiner_voice
+#         # await score_voice(update, context)
+#         print("convert text to audio")
+#         if not text.strip():
+#             raise ValueError("🚨 Input text contains no characters.")
+#         # user_data = context.user_data.setdefault('user_data', {})
+#         # print("user_data['examiner_voice'] ",user_data['examiner_voice'])
+#         # examiner_voice = user_data['examiner_voice']
+#         if examiner_voice == "":
+#             examiner_voice = "Liv" 
 
-        unreal_speech_api = random.choice(unreal_speech_API_keys)    
-        response = requests.post(
-            'https://api.v7.unrealspeech.com/stream',
-            headers={
-                'Authorization': f"Bearer {unreal_speech_api}" 
+#         unreal_speech_api = random.choice(unreal_speech_API_keys)    
+#         response = requests.post(
+#             'https://api.v7.unrealspeech.com/stream',
+#             headers={
+#                 'Authorization': f"Bearer {unreal_speech_api}" 
                 
-            },
-            json={
-                'Text': text,
-                'VoiceId': examiner_voice,
-                'Bitrate': '64k',
-                'Speed': '0',
-                'Pitch': '1',
-                'Codec': 'libmp3lame',
-            }
-        )
+#             },
+#             json={
+#                 'Text': text,
+#                 'VoiceId': examiner_voice,
+#                 'Bitrate': '64k',
+#                 'Speed': '0',
+#                 'Pitch': '1',
+#                 'Codec': 'libmp3lame',
+#             }
+#         )
         
-        if response.status_code == 200:
-            # Save the audio content to a file
-            with open('audio.oga', 'wb') as f:
-                f.write(response.content)
+#         if response.status_code == 200:
+#             # Save the audio content to a file
+#             with open('audio.oga', 'wb') as f:
+#                 f.write(response.content)
             
-            return 'audio.oga'
-        else:
-            raise Exception(f"🚨 Failed to convert text to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
-    except Exception as e:
+#             return 'audio.oga'
+#         else:
+#             raise Exception(f"🚨 Failed to convert text to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
+#     except Exception as e:
         
-        print("convert text to audio second option")
-        if not text.strip():
-            raise ValueError("Input text contains no characters.")
+#         print("convert text to audio second option")
+#         if not text.strip():
+#             raise ValueError("Input text contains no characters.")
         
-        if examiner_voice == "":
-            examiner_voice = "Liv" 
-        unreal_speech_api = random.choice(unreal_speech_API_keys) 
-        response = requests.post(
-            'https://api.v7.unrealspeech.com/stream',
-            headers={
-                'Authorization': f"Bearer {unreal_speech_api}"
-            },
-            json={
-                'Text': text,
-                'VoiceId': examiner_voice,
-                'Bitrate': '64k',
-                'Speed': '0',
-                'Pitch': '1',
-                'Codec': 'libmp3lame',
-            }
-        )
+#         if examiner_voice == "":
+#             examiner_voice = "Liv" 
+#         unreal_speech_api = random.choice(unreal_speech_API_keys) 
+#         response = requests.post(
+#             'https://api.v7.unrealspeech.com/stream',
+#             headers={
+#                 'Authorization': f"Bearer {unreal_speech_api}"
+#             },
+#             json={
+#                 'Text': text,
+#                 'VoiceId': examiner_voice,
+#                 'Bitrate': '64k',
+#                 'Speed': '0',
+#                 'Pitch': '1',
+#                 'Codec': 'libmp3lame',
+#             }
+#         )
         
-        if response.status_code == 200:
-            # Save the audio content to a file
-            with open('audio.oga', 'wb') as f:
-                f.write(response.content)
+#         if response.status_code == 200:
+#             # Save the audio content to a file
+#             with open('audio.oga', 'wb') as f:
+#                 f.write(response.content)
             
-            return 'audio.oga'
-        else:
-            raise Exception(f"🚨 Failed to convert text to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
+#             return 'audio.oga'
+#         else:
+#             raise Exception(f"🚨 Failed to convert text to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
+
+# async def convert_text_to_audio(text, examiner_voice):
+#   if not text.strip():
+#       raise ValueError("🚨 Input text contains no characters.")
+  
+#   if examiner_voice == "":
+#       examiner_voice = "Liv"
+
+# #   unreal_speech_API_keys = ["key1", "key2", "key3"]  # Replace with your actual API keys
+  
+#   for attempt in range(3):
+#       try:
+#         #   print(f"Attempting to convert text to audio (Attempt {attempt + 1})")
+#           unreal_speech_api = random.choice(unreal_speech_API_keys)
+#           response = requests.post(
+#               'https://api.v7.unrealspeech.com/stream',
+#               headers={
+#                 #   'Authorization': f"Bearer {unreal_speech_api}"
+#                 'Authorization' : 'Bearer O1NloOK2SySJS72tnQ9ZaeRDYQPWecclkKgK6v1UmOsvfpsuSLDBTb'
+#               },
+#               json={
+#                   'Text': text,
+#                   'VoiceId': examiner_voice,
+#                   'Bitrate': '64k',
+#                   'Speed': '0',
+#                   'Pitch': '1',
+#                   'Codec': 'libmp3lame',
+#               }
+#           )
+          
+#           if response.status_code == 200:
+#               with open('audio.oga', 'wb') as f:
+#                   f.write(response.content)
+#               return 'audio.oga'
+#           else:
+#               print(f"🚨 Attempt {attempt + 1} failed. Status code: {response.status_code}")
+#               if attempt == 0:
+#                   print("Trying second option...")
+#                   continue
+#               else:
+#                   raise Exception(f"🚨 Failed to convert text to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
+      
+#       except Exception as e:
+#           if attempt == 0:
+#               print(f"Error in attempt {attempt + 1}: {str(e)}")
+#               print("Trying second option...")
+#               continue
+#           else:
+#               raise Exception(f"🚨 Both attempts to convert text to audio failed. Last error: {str(e)}")
+
+#   raise Exception("🚨 Failed to convert text to audio after all attempts.")
+unreal_speech_api = random.choice(unreal_speech_API_keys)
+async def convert_text_to_audio(text, examiner_voice):
+
+  def make_request(text, examiner_voice,api):
+      if not text.strip():
+          raise ValueError("🚨 Input text contains no characters.")
+      
+      if examiner_voice == "":
+          examiner_voice = "Liv"
+      
+    #   unreal_speech_api = random.choice(unreal_speech_API_keys)
+      response = requests.post(
+          'https://api.v7.unrealspeech.com/stream',
+          headers={
+              'Authorization': f"Bearer {api}"
+            #   'Authorization' : 'Bearer O1NloOK2SySJS72tnQ9ZaeRDYQPWecclkKgK6v1UmOsvfpsuSLDBTb'
+          },
+          json={
+              'Text': text,
+              'VoiceId': examiner_voice,
+              'Bitrate': '64k',
+              'Speed': '0',
+              'Pitch': '1',
+              'Codec': 'libmp3lame',
+          }
+      )
+      
+      if response.status_code == 200:
+          # Save the audio content to a file
+          with open('audio.oga', 'wb') as f:
+              f.write(response.content)
+          return 'audio.oga'
+      else:
+          raise Exception(f"🚨 Failed to convert text to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
+
+  try:
+      print("convert text to audio")
+      return make_request(text, examiner_voice,unreal_speech_api)
+  except Exception as e:
+      print(f"First attempt failed: {e}")
+      print("convert text to audio second option")
+      try:
+          return make_request(text, examiner_voice,"O1NloOK2SySJS72tnQ9ZaeRDYQPWecclkKgK6v1UmOsvfpsuSLDBTb")
+      except Exception as e:
+          print(f"Second attempt failed: {e}")
+          raise Exception("🚨 Both attempts to convert text to audio failed.")
 # Function to convert audio to text using Deepgram STT API
 async def convert_audio_to_text(file_id, update, context):
+    # print("DeepGram version: ",deepgram.__version__)
     try:
         try:
             deppgarm_api = random.choice(deepgram_api_keys)
@@ -2164,7 +2335,7 @@ async def convert_audio_to_text(file_id, update, context):
                 numerals=False,
             )
             # print(f"File path: {file_path}")
-            response = deepgram_client.listen.prerecorded.v("1").transcribe_url(AUDIO_URL, options)
+            response = deepgram_client.listen.rest.v("1").transcribe_url(AUDIO_URL, options)
             transcript = response.to_json(indent=4)
             response_data = json.loads(transcript)
             transcript_text = response_data['results']['channels'][0]['alternatives'][0]['transcript']
@@ -2172,7 +2343,7 @@ async def convert_audio_to_text(file_id, update, context):
         except Exception as e:
             deppgarm_api = random.choice(deepgram_api_keys)
             deepgram_client = DeepgramClient(deppgarm_api)
-            print(f"{update.effective_user.id} convert audio to text")
+            print(f"{update.effective_user.id} convert audio to text second option")
             file = await context.bot.get_file(file_id)
             
             file_path = file.file_path
@@ -2187,7 +2358,7 @@ async def convert_audio_to_text(file_id, update, context):
                 numerals=False,
             )
             # print(f"File path: {file_path}")
-            response = deepgram_client.listen.prerecorded.v("1").transcribe_url(AUDIO_URL, options)
+            response = deepgram_client.listen.rest.v("1").transcribe_url(AUDIO_URL, options)
             transcript = response.to_json(indent=4)
             response_data = json.loads(transcript)
             transcript_text = response_data['results']['channels'][0]['alternatives'][0]['transcript']
@@ -3488,7 +3659,7 @@ async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAU
         answers_list = user_data.get('answers_list', [])
         analysis_list = user_data.get('analysis_list', [])
         voice_urls = user_data.get('voice_urls', [])
-        # one_minute = user_data['part_1_minute_part_1']
+        one_minute = user_data['part_1_minute_part_1']
         user_data['detailed_feedback'] = []
         detailed_feedback = user_data['detailed_feedback']
 
@@ -3497,7 +3668,7 @@ async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAU
             user_answer = answers_list[i]
             analysis_data = analysis_list[i]
             user_voice_url = voice_urls[i]
-            # user_data['part_1_minute'] = one_minute[i]
+            user_data['part_1_minute'] = one_minute[i]
             print("detailed user_data['part_1_minute']: ",user_data['part_1_minute'])
             prompt = f"Question: {question}\nUser Answer: {user_answer}\nAnalysis Data: {analysis_data}\n\n"
             prompt += """Please provide a detailed analysis of the user's answer, considering the pronunciation, fluency, grammar, vocabulary, and relevance. Generate useful feedback that helps the user understand their performance in depth.
@@ -4148,33 +4319,56 @@ async def start_part2_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Start a countdown timer for 1 minute
         countdown_message = await context.bot.send_message(chat_id=update.effective_chat.id, text="60 seconds remaining...")
 
-        for remaining in range(59, 0, -1):
-            if user_data['test_stop']:
-                print(f"{update.effective_user.id} Test stopped")
-                break
-            else:
-                await asyncio.sleep(1)
-                try:
-                    await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=countdown_message.message_id, text=f"{remaining} seconds remaining...")
-                except Exception as e:
-                    print(f"{update.effective_user.id} 🚨 Failed to update countdown message: {e}")
-
-        # Delete the countdown message and hourglass emoji
-        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
-        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=countdown_message.message_id)
-        await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=preparation_message.message_id)
-
-        # Request the user to record their answer
-        user_data['part2_answering'] = True
-        recording_message = await update.effective_message.reply_text("Please record your answer. It should be between 1 to 2 minutes long.")
-
-        # Store the message IDs in the user_data
+        # for remaining in range(59, 0, -1):
+        #     if user_data['test_stop']:
+        #         print(f"{update.effective_user.id} Test stopped")
+        #         break
+        #     else:
+        #         await asyncio.sleep(1)
+        #         try:
+        #             await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=countdown_message.message_id, text=f"{remaining} seconds remaining...")
+        #         except Exception as e:
+        #             print(f"{update.effective_user.id} 🚨 Failed to update countdown message: {e}")
+              # Store all message IDs
         user_data['part2_question_message_id'] = question_message.message_id
         user_data['part2_audio_message_id'] = audio_message.message_id
         user_data['part2_preparation_message_id'] = preparation_message.message_id
         user_data['part2_waiting_message_id'] = waiting_message.message_id
-        user_data['part2_recording_message_id'] = recording_message.message_id
+        user_data['part2_countdown_message_id'] = countdown_message.message_id
+        
+        user_data['continue_countdown'] = True
+        for remaining in range(59, 0, -1):
+            if not user_data['continue_countdown'] or user_data['test_stop']:
+                print(f"{update.effective_user.id} Countdown stopped")
+                break
+            await asyncio.sleep(1)
+            try:
+                await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=countdown_message.message_id, text=f"{remaining} seconds remaining...")
+            except Exception as e:
+                print(f"{update.effective_user.id} 🚨 Failed to update countdown message: {e}")
+        # Delete the countdown message and hourglass emoji
 
+        try:
+            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
+            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=countdown_message.message_id)
+            await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=preparation_message.message_id)
+        except Exception as e:
+            print(e)
+        # await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=question_message.message_id)
+        # # await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=recording_message.message_id)
+        # await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=audio_message.message_id)
+        # Request the user to record their answer
+        user_data['part2_answering'] = True
+        if user_data['continue_countdown']:
+             recording_message = await update.effective_message.reply_text("Please record your answer. It should be between 1 to 2 minutes long.")
+             user_data['part2_recording_message_id'] = recording_message.message_id
+        # # Store the message IDs in the user_data
+        # user_data['part2_question_message_id'] = question_message.message_id
+        # user_data['part2_audio_message_id'] = audio_message.message_id
+        # user_data['part2_preparation_message_id'] = preparation_message.message_id
+        # user_data['part2_waiting_message_id'] = waiting_message.message_id
+        
+        # user_data['part2_countdown_message_id'] = countdown_message.message_id
     except Exception as e:
         text = ("🚨 start part 2 test", e)
         await error_handling(update, context,text)
@@ -5089,7 +5283,15 @@ async def mock_part2_process(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=countdown_message.message_id, text=f"{remaining} seconds remaining...")
             except Exception as e:
                 print(f"Failed to update countdown message: {e}")
-
+        # for remaining in range(59, 0, -1):
+        #     if user_data['test_stop']:
+        #         print(f"{update.effective_user.id} Countdown stopped")
+        #         break
+        #     await asyncio.sleep(1)
+        #     try:
+        #         await context.bot.edit_message_text(chat_id=update.effective_chat.id, message_id=countdown_message.message_id, text=f"{remaining} seconds remaining...")
+        #     except Exception as e:
+        #         print(f"{update.effective_user.id} 🚨 Failed to update countdown message: {e}")
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=countdown_message.message_id)
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=preparation_message.message_id)
@@ -6350,7 +6552,7 @@ async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
       
       for i in range(0, len(user_ids), 5):
           batch = user_ids[i:i+5]
-          tasks = [send_broadcast_messages(broadcast_messages, user_id, context) for user_id in batch]
+          tasks = [send_broadcast_messages(broadcast_messages, user_id, context,update) for user_id in batch]
           results = await asyncio.gather(*tasks, return_exceptions=True)
           
           for result in results:
@@ -6379,13 +6581,13 @@ async def send_message_copy(chat_id: int, message, context: ContextTypes.DEFAULT
   elif message.document:
       await context.bot.send_document(chat_id, message.document.file_id, caption=message.caption)
   # Add more elif conditions for other types of media if needed
-async def send_broadcast_messages(messages, user_id, context: ContextTypes.DEFAULT_TYPE):
+async def send_broadcast_messages(messages, user_id, context: ContextTypes.DEFAULT_TYPE,update: Update,):
   try:
       for message in messages:
           await send_message_copy(user_id, message, context)
       return True
   except Exception as e:
-      print(f"Failed to send broadcast to user {user_id}: {e}")
+      print(f"Failed to send broadcast to user {user_id} username: {update.effective_user.username}: {e}")
       raise e
 
 async def get_all_user_ids():
@@ -6479,88 +6681,197 @@ async def get_all_user_ids():
 #   return report
 
 
-def generate_bot_statistics():
-    try:
-        now = datetime.now(tzutc())
+# def generate_bot_statistics():
+#     try:
+#         now = datetime.now(tzutc())
 
-        # Fetch users and scores data from Supabase
-        users = supabase.table("ielts_speaking_users").select("*").execute()
-        scores = supabase.table("ielts_speaking_scores").select("*").execute()
+#         # Fetch users and scores data from Supabase
+#         users = supabase.table("ielts_speaking_users").select("*").execute()
+#         scores = supabase.table("ielts_speaking_scores").select("*").execute()
 
-        # Total users
-        total_users = len(users.data)
+#         # Total users
+#         total_users = len(users.data)
 
-        # Users registered in different time periods
-        users_today = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 0)
-        users_yesterday = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 1)
-        users_last_week = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 7)
-        users_last_month = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 30)
+#         # Users registered in different time periods
+#         users_today = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 0)
+#         users_yesterday = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 1)
+#         users_last_week = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 7)
+#         users_last_month = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 30)
 
-        # Users who practiced today
-        users_practiced_today = sum(1 for user in users.data if user['last_practice_date'] and parse(user['last_practice_date']).date() == now.date())
+#         # Users who practiced today
+#         users_practiced_today = sum(1 for user in users.data if user['last_practice_date'] and parse(user['last_practice_date']).date() == now.date())
 
-        # Users in channel
-        users_in_channel = sum(1 for user in users.data if user['in_channel'] is True)
+#         # Users in channel
+#         users_in_channel = sum(1 for user in users.data if user['in_channel'] is True)
 
-        # Users by native language and English level
-        users_by_language = defaultdict(int)
-        users_by_level = defaultdict(int)
-        for user in users.data:
-            lang = user.get('native_language', 'Unknown').lower().capitalize()
-            users_by_language[lang] += 1
-            users_by_level[user.get('english_level', 'Unknown')] += 1
+#         # Users by native language and English level
+#         users_by_language = defaultdict(int)
+#         users_by_level = defaultdict(int)
+#         for user in users.data:
+#             lang = user.get('native_language', 'Unknown').lower().capitalize()
+#             users_by_language[lang] += 1
+#             users_by_level[user.get('english_level', 'Unknown')] += 1
 
-        # Total practice count
-        total_practice_count = sum(user['practice_count'] for user in users.data if user['practice_count'])
+#         # Total practice count
+#         total_practice_count = sum(user['practice_count'] for user in users.data if user['practice_count'])
 
-        # Average scores
-        part1_scores = [score['part1_score'] for score in scores.data if score['part1_score']]
-        part2_scores = [score['part2_score'] for score in scores.data if score['part2_score']]
-        part3_scores = [score['part3_score'] for score in scores.data if score['part3_score']]
-        mock_test_scores = [score['mock_test_score'] for score in scores.data if score['mock_test_score']]
+#         # Average scores
+#         part1_scores = [score['part1_score'] for score in scores.data if score['part1_score']]
+#         part2_scores = [score['part2_score'] for score in scores.data if score['part2_score']]
+#         part3_scores = [score['part3_score'] for score in scores.data if score['part3_score']]
+#         mock_test_scores = [score['mock_test_score'] for score in scores.data if score['mock_test_score']]
 
-        avg_scores = {
-            'part1': sum(part1_scores) / len(part1_scores) if part1_scores else 0,
-            'part2': sum(part2_scores) / len(part2_scores) if part2_scores else 0,
-            'part3': sum(part3_scores) / len(part3_scores) if part3_scores else 0,
-            'mock_test': sum(mock_test_scores) / len(mock_test_scores) if mock_test_scores else 0,
-        }
+#         avg_scores = {
+#             'part1': sum(part1_scores) / len(part1_scores) if part1_scores else 0,
+#             'part2': sum(part2_scores) / len(part2_scores) if part2_scores else 0,
+#             'part3': sum(part3_scores) / len(part3_scores) if part3_scores else 0,
+#             'mock_test': sum(mock_test_scores) / len(mock_test_scores) if mock_test_scores else 0,
+#         }
 
-        # Generate the report
-        report = f"""
-        📊 Bot Statistics Report
+#         # Generate the report
+#         report = f"""
+#         📊 Bot Statistics Report
 
-        👥 Total Users: {total_users}
-        🆕 New Users:
-        • Today: {users_today}
-        • Yesterday: {users_yesterday}
-        • Last Week: {users_last_week}
-        • Last Month: {users_last_month}
+#         👥 Total Users: {total_users}
+#         🆕 New Users:
+#         • Today: {users_today}
+#         • Yesterday: {users_yesterday}
+#         • Last Week: {users_last_week}
+#         • Last Month: {users_last_month}
 
-        🏋️ Practice Statistics:
-        • Total Practices: {total_practice_count}
-        • Users Practiced Today: {users_practiced_today}
+#         🏋️ Practice Statistics:
+#         • Total Practices: {total_practice_count}
+#         • Users Practiced Today: {users_practiced_today}
 
-        📺 Channel Membership:
-        • Users in Channel: {users_in_channel}
+#         📺 Channel Membership:
+#         • Users in Channel: {users_in_channel}
 
-        🌎 Users by Native Language:
-        {chr(10).join(f"  • {lang}: {count}" for lang, count in sorted(users_by_language.items()))}
+#         🌎 Users by Native Language:
+#         {chr(10).join(f"  • {lang}: {count}" for lang, count in sorted(users_by_language.items()))}
 
-        🎓 Users by English Level:
-        {chr(10).join(f"  • {level}: {count}" for level, count in sorted(users_by_level.items()))}
+#         🎓 Users by English Level:
+#         {chr(10).join(f"  • {level}: {count}" for level, count in sorted(users_by_level.items()))}
 
-        📈 Average Scores:
-        • Part 1: {avg_scores['part1']:.2f}
-        • Part 2: {avg_scores['part2']:.2f}
-        • Part 3: {avg_scores['part3']:.2f}
-        • Mock Test: {avg_scores['mock_test']:.2f}
-        """
+#         📈 Average Scores:
+#         • Part 1: {avg_scores['part1']:.2f}
+#         • Part 2: {avg_scores['part2']:.2f}
+#         • Part 3: {avg_scores['part3']:.2f}
+#         • Mock Test: {avg_scores['mock_test']:.2f}
+#         """
 
-        return report
-    except Exception as e:
-        print("generate bot statistics ",e)
+#         return report
+#     except Exception as e:
+#         print("generate bot statistics ",e)
         
+def parse_date(date_string):
+  try:
+      return parse(date_string)
+  except:
+      return None
+def generate_bot_statistics():
+  try:
+      now = datetime.now(tzutc())
+
+      # Fetch users and scores data from Supabase
+      users = supabase.table("ielts_speaking_users").select("*").execute()
+      scores = supabase.table("ielts_speaking_scores").select("*").execute()
+
+      # Total users
+      total_users = len(users.data)
+
+      # Users registered in different time periods
+      users_today = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 0)
+      users_yesterday = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 1)
+      users_last_week = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 7)
+      users_last_month = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 30)
+
+        # Practice statistics
+      practices_today = sum(1 for user in users.data if user.get('last_attempt_time') and 
+                            parse_date(user['last_attempt_time']).date() == now.date())
+    #   practices_yesterday = sum(1 for user in users.data if user.get('last_attempt_time') and 
+                                # parse_date(user['last_attempt_time']).date() == (now - timedelta(days=1)).date())
+
+      # Users who practiced today
+      users_practiced_today = sum(1 for user in users.data if user.get('last_attempt_time') and 
+                                  parse_date(user['last_attempt_time']).date() == now.date())
+      
+      users_practiced_at_least_once = sum(1 for user in users.data if user['practice_count'] > 0)
+      users_never_practiced = sum(1 for user in users.data if user['practice_count'] == 0)
+      users_practiced_more_than_10 = sum(1 for user in users.data if user['practice_count'] > 10)
+
+      # Users who practiced today
+    #   users_practiced_today = sum(1 for user in users.data if user['last_practice_date'] and parse(user['last_practice_date']).date() == now.date())
+
+      # Users in channel
+      users_in_channel = sum(1 for user in users.data if user['in_channel'] is True)
+
+      # Users by native language and English level
+      users_by_language = defaultdict(int)
+      users_by_level = defaultdict(int)
+      for user in users.data:
+          lang = user.get('native_language', '').strip()
+          users_by_language[lang if lang else 'Unknown'] += 1
+          level = user.get('english_level', '').strip()
+          users_by_level[level if level else 'Unknown'] += 1
+
+      # Total practice count
+      total_practice_count = sum(user['practice_count'] for user in users.data if user['practice_count'])
+
+      # Average scores
+      part1_scores = [score['part1_score'] for score in scores.data if score['part1_score']]
+      part2_scores = [score['part2_score'] for score in scores.data if score['part2_score']]
+      part3_scores = [score['part3_score'] for score in scores.data if score['part3_score']]
+      mock_test_scores = [score['mock_test_score'] for score in scores.data if score['mock_test_score']]
+
+      avg_scores = {
+          'part1': sum(part1_scores) / len(part1_scores) if part1_scores else 0,
+          'part2': sum(part2_scores) / len(part2_scores) if part2_scores else 0,
+          'part3': sum(part3_scores) / len(part3_scores) if part3_scores else 0,
+          'mock_test': sum(mock_test_scores) / len(mock_test_scores) if mock_test_scores else 0,
+      }
+
+      # Generate the report
+      report = f"""
+📊 Bot Statistics Report
+
+👥 Total Users: {total_users}
+🆕 New Users:
+• Today: {users_today}
+• Yesterday: {users_yesterday}
+• Last Week: {users_last_week}
+• Last Month: {users_last_month}
+
+🏋️ Practice Statistics:
+• Total Practices: {total_practice_count}
+• Practices Today: {practices_today}
+• Users Practiced Today: {users_practiced_today}
+
+👨‍🎓 User Practice Breakdown:
+• Practiced at least once: {users_practiced_at_least_once} ({users_practiced_at_least_once/total_users*100:.1f}%)
+• Never practiced: {users_never_practiced} ({users_never_practiced/total_users*100:.1f}%)
+• Practiced more than 10 times: {users_practiced_more_than_10} ({users_practiced_more_than_10/total_users*100:.1f}%)
+
+📺 Channel Membership:
+• Users in Channel: {users_in_channel} ({users_in_channel/total_users*100:.1f}%)
+
+🌎 Users by Native Language:
+{chr(10).join(f"  • {lang}: {count} ({count/total_users*100:.1f}%)" for lang, count in sorted(users_by_language.items(), key=lambda x: x[1], reverse=True))}
+
+🎓 Users by English Level:
+{chr(10).join(f"  • {level}: {count} ({count/total_users*100:.1f}%)" for level, count in sorted(users_by_level.items(), key=lambda x: x[1], reverse=True))}
+
+📈 Average Scores:
+• Part 1: {avg_scores['part1']:.2f}
+• Part 2: {avg_scores['part2']:.2f}
+• Part 3: {avg_scores['part3']:.2f}
+• Mock Test: {avg_scores['mock_test']:.2f}
+"""
+
+      return report
+  except Exception as e:
+      print("generate bot statistics ", e)
+      return "An error occurred while generating statistics."
+
 
 # Usage in your bot
 # @bot.on_callback_query(filters.regex("^admin_stats$"))
