@@ -75,8 +75,8 @@ unreal_speech_API1 = os.getenv("unreal_speech_API1")
 unreal_speech_API2 = os.getenv("unreal_speech_API2")
 unreal_speech_API3 = os.getenv("unreal_speech_API3")
 unreal_speech_API4 = os.getenv("unreal_speech_API4")
-unreal_speech_API_keys=  [unreal_speech_API1, unreal_speech_API2,unreal_speech_API3,unreal_speech_API4]
-
+# unreal_speech_API_keys=  [unreal_speech_API1, unreal_speech_API2,unreal_speech_API3,unreal_speech_API4]
+unreal_speech_API_keys = [os.getenv(f"unreal_speech_API{i}") for i in range(1, 11)]
 #Gemini_API_Key
 
 Gemini_API_Key = os.getenv("Gemini_API_Key")
@@ -2267,7 +2267,7 @@ async def check_user_attempts(update: Update, context: ContextTypes.DEFAULT_TYPE
 #               raise Exception(f"🚨 Both attempts to convert text to audio failed. Last error: {str(e)}")
 
 #   raise Exception("🚨 Failed to convert text to audio after all attempts.")
-unreal_speech_api = random.choice(unreal_speech_API_keys)
+
 async def convert_text_to_audio(text, examiner_voice):
 
   def make_request(text, examiner_voice,api):
@@ -2304,15 +2304,30 @@ async def convert_text_to_audio(text, examiner_voice):
 
   try:
       print("convert text to audio")
-      return make_request(text, examiner_voice,unreal_speech_api)
+      attempts = 0
+      while attempts < 6:
+          try:
+              unreal_speech_api = random.choice(unreal_speech_API_keys)
+              return make_request(text, examiner_voice, unreal_speech_api)
+          except Exception as e:
+              print(f"Attempt {attempts + 1} failed: {e}")
+              attempts += 1
+              continue
+      try:
+          return make_request(text, examiner_voice,"KtOIJsoP6mzYmu4WUJx3aGrEWMhEUdl4kUYAQPM7VOR08bQVcIXA7x")
+      except Exception as e:
+          print(f"Second attempt failed: {e}")
+          raise Exception("🚨 Both attempts to convert text to audio failed.")
   except Exception as e:
       print(f"First attempt failed: {e}")
       print("convert text to audio second option")
       try:
-          return make_request(text, examiner_voice,"O1NloOK2SySJS72tnQ9ZaeRDYQPWecclkKgK6v1UmOsvfpsuSLDBTb")
+          return make_request(text, examiner_voice,"KtOIJsoP6mzYmu4WUJx3aGrEWMhEUdl4kUYAQPM7VOR08bQVcIXA7x")
       except Exception as e:
           print(f"Second attempt failed: {e}")
           raise Exception("🚨 Both attempts to convert text to audio failed.")
+
+
 # Function to convert audio to text using Deepgram STT API
 async def convert_audio_to_text(file_id, update, context):
     # print("DeepGram version: ",deepgram.__version__)
@@ -2696,18 +2711,24 @@ async def generate_feedback_with_llm(prompt,context: ContextTypes.DEFAULT_TYPE):
         return user_data['generate_feedback_with_llm']
 
 
+
 async def convert_answer_to_audio(user_answer, speed,examiner_voice):
     # global  examiner_voice
     # user_data = context.user_data.setdefault('user_data', {})
     # print(user_data['examiner_voice'])
-    if examiner_voice== "":
-        examiner_voice = "Liv" 
-    unreal_speech_api = random.choice(unreal_speech_API_keys)
-    try:
+     
+    def make_request(user_answer, examiner_voice,api):
+        
+        if not user_answer.strip():
+          raise ValueError("🚨 Input text contains no characters.")
+        if examiner_voice== "":
+            examiner_voice = "Liv" 
+        
+        
         response = requests.post(
             'https://api.v7.unrealspeech.com/stream',
             headers={
-                'Authorization': f"Bearer {unreal_speech_api}"
+                'Authorization': f"Bearer {api}"
             },
             json={
                 'Text': user_answer,
@@ -2718,54 +2739,77 @@ async def convert_answer_to_audio(user_answer, speed,examiner_voice):
                 'Codec': 'libmp3lame',
             }
         )
-
         if response.status_code == 200:
             # Generate a unique filename for the audio file
             audio_filename = f"user_audio_{int(time.time())}.mp3"
-
             # Save the audio content to a file
             with open(audio_filename, 'wb') as f:
                 f.write(response.content)
-
             return audio_filename
         else:
-            print(f"Error converting answer to audio. Status code: {response.status_code}")
-            raise Exception(f"Error converting answer to audio. Status code: {response.status_code}")
-            return ""  # Return an empty string instead of None
-
+            print(f"🚨 Error converting answer to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
+            raise Exception(f"Error converting answer to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
+            # return ""  # Return an empty string instead of None
+    try:
+      print("convert answer to audio")
+      attempts = 0
+      while attempts < 6:
+          try:
+              unreal_speech_api = random.choice(unreal_speech_API_keys)
+              return make_request(user_answer, examiner_voice, unreal_speech_api)
+          except Exception as e:
+              print(f"Attempt {attempts + 1} failed: {e}")
+              attempts += 1
+              continue
+      # print(f"First attempt failed: {e}")
+      print("🚨 convert answer to audio second option")
+      try:
+          return make_request(user_answer, examiner_voice,"KtOIJsoP6mzYmu4WUJx3aGrEWMhEUdl4kUYAQPM7VOR08bQVcIXA7x")
+      except Exception as e:
+          print(f"Second attempt failed: {e}")
+          raise Exception("🚨 Both attempts to convert answer to audio failed.")
     except Exception as e:
-        # global  examiner_voice
-        if examiner_voice== "":
-                examiner_voice = "Liv" 
+        print(f"First attempt failed: {e}")
+        print("convert answer to audio second option")
+        try:
+            return make_request(user_answer, examiner_voice,"KtOIJsoP6mzYmu4WUJx3aGrEWMhEUdl4kUYAQPM7VOR08bQVcIXA7x")
+        except Exception as e:
+            print(f"Second attempt failed: {e}")
+            raise Exception("🚨 Both attempts to convert answer to audio failed.")
+        # except Exception as e:
+        #     # global  examiner_voice
+        #     if examiner_voice== "":
+        #             examiner_voice = "Liv" 
 
-        
-        response = requests.post(
-                'https://api.v7.unrealspeech.com/stream',
-                headers={
-                    'Authorization': f"Bearer {unreal_speech_api}" 
-                },
-                json={
-                    'Text': user_answer,
-                    'VoiceId': examiner_voice,
-                    'Bitrate': '64k',
-                    'Speed': speed,
-                    'Pitch': '1',
-                    'Codec': 'libmp3lame',
-                }
-            )
+            
+        #     response = requests.post(
+        #             'https://api.v7.unrealspeech.com/stream',
+        #             headers={
+        #                 'Authorization': f"Bearer {unreal_speech_api}" 
+        #             },
+        #             json={
+        #                 'Text': user_answer,
+        #                 'VoiceId': examiner_voice,
+        #                 'Bitrate': '64k',
+        #                 'Speed': speed,
+        #                 'Pitch': '1',
+        #                 'Codec': 'libmp3lame',
+        #             }
+        #         )
 
-        if response.status_code == 200:
-                # Generate a unique filename for the audio file
-            audio_filename = f"user_audio_{int(time.time())}.mp3"
+        #     if response.status_code == 200:
+        #             # Generate a unique filename for the audio file
+        #         audio_filename = f"user_audio_{int(time.time())}.mp3"
 
-                # Save the audio content to a file
-            with open(audio_filename, 'wb') as f:
-                f.write(response.content)
+        #             # Save the audio content to a file
+        #         with open(audio_filename, 'wb') as f:
+        #             f.write(response.content)
 
-            return audio_filename
-        else:
-            print(f"🚨 Error converting answer to audio. Status code: {response.status_code}")
-            return ""  # Return an empty string instead of None
+        #         return audio_filename
+        #     else:
+        #         print(f"🚨 Error converting answer to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
+        #         return ""  # Return an empty string instead of None
+
 
 
 async def translate_feedback(user_id, feedback, update: Update, context: ContextTypes.DEFAULT_TYPE):
