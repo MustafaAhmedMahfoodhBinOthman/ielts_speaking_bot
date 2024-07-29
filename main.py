@@ -3,6 +3,10 @@ import re
 import requests
 import json
 import random
+import ast
+# from exa_py import Exa
+from youtube_search import YoutubeSearch
+import json
 from supabase import create_client, Client
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton,ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
@@ -124,6 +128,8 @@ voice_samples = {
 # List to store Part 2 answers
 # Handler for the /start command
 #----------------------------- General Code -------------------------------------
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"{update.effective_user.id} -------------------start----------------------")
     user_id = update.effective_user.id
@@ -216,7 +222,7 @@ async def ask_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("Arabic", callback_data=f'{userID}language_Arabic'),
             InlineKeyboardButton("Urdu", callback_data=f'{userID}language_Urdu')],
-            [InlineKeyboardButton("Chinese", callback_data=f'{userID}language_Chinese'),
+            [InlineKeyboardButton("Uzbek", callback_data=f'{userID}language_Uzbek'),
             InlineKeyboardButton("Persian", callback_data=f'{userID}language_Persian')],
             [InlineKeyboardButton("Hindi", callback_data=f'{userID}language_Hindi'),
             InlineKeyboardButton("Other", callback_data=f'{userID}language_other')]
@@ -423,6 +429,158 @@ async def ask_target_ielts_score(update: Update, context: ContextTypes.DEFAULT_T
         text = ("🚨 ask targeted score function", e)
         await error_handling(update, context,text)
 
+async def format_lesson_titles(lessons_text):
+  prompt = f"""
+  You are tasked with formatting the following lesson recommendations into a Python list. 
+  The input text contains recommendations for YouTube lessons based on IELTS speaking feedback.
+  
+  Please format the input into a Python list with exactly three string items.
+  Each item should contain only the YouTube video title, nothing else.
+  
+  Input text:
+  {lessons_text}
+  
+  Formatted output example: i want it exactly like this example format
+  ["title 1", "title 2", "title 3"]
+  
+  for the title 3 the lesson whould be from IELTS advantage or english speaking success youtube channels so please include the name of the channel in the title
+  Please provide the formatted output as a valid Python list:
+  make sure that you include only the titles to the list and make it exactly like the python list and do not write anything else only write the list do not include any other text i hope you follow this instruction exactly your output should be only a python list and it will be processed to extract the titles for other operations in python functions so be 100% accurate
+  """
+  
+  formatted_lessons = await feedback_lessons(prompt)
+  
+  # Use ast.literal_eval to safely evaluate the string as a Python expression
+  try:
+      lessons_list = ast.literal_eval(formatted_lessons.strip())
+      if isinstance(lessons_list, list) and len(lessons_list) == 3:
+          return lessons_list
+      else:
+          raise ValueError("Output is not a list with 3 items")
+  except:
+      # If parsing fails, fall back to simple string splitting
+      return [title.strip() for title in formatted_lessons.split(',') if title.strip()][:3]  
+async def feedback_lessons(prompt):
+    
+    try:
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": ""},
+                {"role": "user", "content": prompt}
+            ],
+            model="llama3-groq-70b-8192-tool-use-preview",
+        )
+        feedback = chat_completion.choices[0].message.content
+        # feedback = re.sub(r'\*', '', feedback)  # Remove asterisks (*)
+        # feedback = re.sub(r'#', '', feedback)  # Remove hash symbols (#)
+        
+        return feedback
+        # client = AsyncOpenAI(
+        #         base_url="https://api.unify.ai/v0/",
+        #         api_key=unify_API
+        #     )
+
+        
+                
+        # response = await client.chat.completions.create(
+        #                 model="gpt-4o@openai",
+        #                 messages=[
+        #                     {"role": "user", "content": prompt}
+        #                 ],
+        #                 max_tokens=4096,
+        #                 temperature=0.0,
+        #                 stream=False
+        #             )
+                    
+        # feedback = response.choices[0].message.content
+        # return feedback
+        
+    except Exception as e:
+        print("🚨 Groq error switching to perplexity generate_feedback_with_llm ",e)
+        messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        ""
+                       
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        prompt
+                    ),
+                },
+            ]
+        client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
+        response = client.chat.completions.create(
+            model="llama-3-70b-instruct",
+            messages=messages
+        )
+        
+        # print(response.choices[0].message.content)
+        feedback = (response.choices[0].message.content)
+        # feedback = re.sub(r'\*', '', feedback)  # Remove asterisks (*)
+        # feedback = re.sub(r'#', '', feedback)  # Remove hash symbols (#)
+        
+        return feedback
+
+async def recommendation_lesson(feedback):
+  initial_prompt = f"""As an IELTS speaking expert, analyze the following detailed feedback for an IELTS Speaking test and recommend three highly specific YouTube lessons to address the main weaknesses identified. Your recommendations should be tailored to significantly improve the test-taker's performance.
+
+  Guidelines:
+  1. Carefully examine the feedback across all areas: Pronunciation, Fluency, Grammatical Range and Accuracy, Lexical Resource, and Relevance and Coherence.
+  2. Identify the three most critical areas for improvement based on the lowest scores and most impactful weaknesses.
+  3. For each area, recommend one highly specific YouTube lesson that directly addresses the identified weakness.
+  4. Ensure that one of the three lessons is from a popular IELTS YouTube channel such as IELTS Advantage or English Speaking Success (please include the name of the channel in the lesson title ).
+  5. Provide only the exact titles of the YouTube videos, as these will be used for searching.
+  6. Choose lessons that are practical, engaging, and likely to yield significant improvements.
+
+  The detailed feedback is as follows:
+
+  {feedback}
+
+  Based on this feedback, please provide three YouTube lesson titles that address the main weaknesses identified in this feedback.
+  """
+  
+  initial_lessons = await feedback_lessons(initial_prompt)
+#   print("Initial lesson recommendations:", initial_lessons)
+  
+  formatted_lessons = await format_lesson_titles(initial_lessons)
+#   print("Formatted lesson titles:", formatted_lessons)
+  
+  recommendations = []
+  for lesson_title in formatted_lessons:
+      print("lesson_title: ",lesson_title)
+      results = YoutubeSearch(lesson_title, max_results=1).to_json()
+      parsed_results = json.loads(results)
+      
+      if parsed_results['videos']:
+          url_suffix = parsed_results['videos'][0]['url_suffix']
+          title = parsed_results['videos'][0]['title']
+          full_url = f"https://www.youtube.com{url_suffix}"
+          recommendations.append({
+              'title': title,
+              'url': full_url
+          })
+  
+#   print("Final recommendations:", recommendations)
+  return recommendations
+
+async def send_recommendations(update: Update, context: ContextTypes.DEFAULT_TYPE, feedback):
+  recommendations = await recommendation_lesson(feedback)
+  chat_id = update.effective_chat.id
+  
+  if recommendations:
+      await context.bot.send_message(chat_id=chat_id, text="Based on your feedback, here are recommended lessons to enhance your IELTS speaking skills.\n\n🔶This new feature is still in the experimental stage; please contact me at @ielts_pathway for any issues. ")
+      
+      for i, rec in enumerate(recommendations, 1):
+          message = f"{i}. {rec['title']}\n{rec['url']}"
+          print(message)
+          await context.bot.send_message(chat_id=chat_id, text=message)
+          await asyncio.sleep(0.5)  # Add a 0.5 second delay between messages
+  else:
+      await context.bot.send_message(chat_id=chat_id, text="Sorry, I couldn't find any relevant lessons based on your feedback.")
 
 async def ask_preferred_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"{update.effective_user.id} ask preferred examiner voice")
@@ -506,13 +664,14 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif 'other_language_prompt' in user_data:
             print(f"{update.effective_user.id} other_language_prompt")
             if text in translated_languages:
-                native_language = text
+                index = translated_languages.index(text)
+                native_language = common_languages[index]
                 supabase.table('ielts_speaking_users').update({'native_language': native_language}).eq('user_id', user_id).execute()
                 del user_data['other_language_prompt']
                 await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
                 await ask_english_level(update, context)
             elif text.capitalize() in common_languages:
-                native_language = text
+                native_language = text.capitalize()
                 supabase.table('ielts_speaking_users').update({'native_language': native_language}).eq('user_id', user_id).execute()
                 del user_data['other_language_prompt']
                 await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
@@ -522,14 +681,15 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif 'other_language_prompt2' in user_data:
             print(f"{update.effective_user.id} other_language_prompt2")
             if text in translated_languages:
-                native_language = text
+                index = translated_languages.index(text)
+                native_language = common_languages[index]
                 supabase.table('ielts_speaking_users').update({'native_language': native_language}).eq('user_id', user_id).execute()
                 del user_data['other_language_prompt2']
                 await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
                 text = "The language has been successfully changed."
                 await show_main_menu(update, context, text)
             elif text.capitalize() in common_languages:
-                native_language = text
+                native_language = text.capitalize()
                 supabase.table('ielts_speaking_users').update({'native_language': native_language}).eq('user_id', user_id).execute()
                 del user_data['other_language_prompt2']
                 await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=update.message.message_id)
@@ -573,7 +733,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 del user_data['part_1_topic_selection']
                 await generate_and_ask_questions(update, context, selected_topic)
             else:
-                if text == "Stop the Test":
+                if text == "Stop the Test" :
                     print(f"{update.effective_user.id} stop the test")
                     try:
                         del user_data['part_1_topic_selection']
@@ -669,7 +829,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 text = "You have reached the maximum number of attempts (5 tests) for today. Please try again after 24 hours.\n for more inforamtion please contact me @ielts_pathway"
                 await show_main_menu(update, context, text)
-        elif text == "Mock Test":
+        elif text == "Mock Test (Full test)":
             print(f"{update.effective_user.id} mock test selected")
             await check_user_attempts(update, context)
             if user_data['remaining_attempts'] > 0:
@@ -891,6 +1051,18 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"Error removing inline keyboard: {e}")
             await update.message.reply_text("You can contact me at @ielts_pathway.")
+        elif text == "Settings":
+            keyboard = [
+            # [KeyboardButton("Start Test")],
+            # [KeyboardButton("IELTS Writing 📝"),KeyboardButton("Show Progress")],
+            # [KeyboardButton("Contact Me"), KeyboardButton("Bot Channel")],
+            [KeyboardButton("Change language"), KeyboardButton("Change voice")],
+            # [KeyboardButton("Change Email")],
+            [KeyboardButton("Main menu")],
+           
+        ]
+            reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+            await update.effective_message.reply_text(text, reply_markup=reply_markup)
         elif text == "Change language":
             print(f"{update.effective_user.id} change language selected")
             # try:
@@ -980,7 +1152,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
               if 'broadcast_messages' not in context.user_data:
                   context.user_data['broadcast_messages'] = []
               context.user_data['broadcast_messages'].append(update.message)
-              await update.message.reply_text("Message added to broadcast. Send more messages or click 'Done' when finished.")
+              keyboard = [
+      [KeyboardButton("Done"), KeyboardButton("Cancel")]
+                ]
+              reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+              await update.message.reply_text("Message added to broadcast. Send more messages or click 'Done' when finished.",reply_markup=reply_markup)
           return
         else:
             print("I'm sorry, but while practicing speaking, it's best to only record your voice instead of sending text messages. If you need further assistance, please reach out to me at @ielts_pathway.")
@@ -1135,7 +1311,7 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 else:
                     voice_file_path_url = await get_voice_file_path_url(user_answer_voice)
                     user_answer_text = await convert_audio_to_text(user_answer_voice.file_id, update, context)
-
+                    
                     if user_answer_text:
                         user_data.setdefault('mock_part2_answers', []).append(user_answer_text)
                         user_data.setdefault('mock_part2_voice_urls', []).append(voice_file_path_url)
@@ -1177,7 +1353,7 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await update.message.reply_text("Please provide a voice message with your answer.")
         else:
             print(f"{update.effective_user.id} Not answering a question")
-            await update.message.reply_text("Please select a topic and start answering the questions.")
+            await update.message.reply_text("Please select a topic and start answering the questions. \nto start from the beginning /start")
     except Exception as e:
         text = ("🚨 voice handler function ", e)
         await error_handling(update, context,text)
@@ -1295,6 +1471,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if voice_file_id:
                 file = await context.bot.get_file(voice_file_id)
                 file_path = file.file_path
+                
                 user_data.setdefault('voice_urls', []).append(file_path)
             
             user_data.setdefault('answers_list', []).append(current_answer)
@@ -1432,12 +1609,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if voice_file_id:
                 file = await context.bot.get_file(voice_file_id)
                 file_path = file.file_path
+                print(file_path)
                 user_data.setdefault('part2_voice_urls', []).append(file_path)
 
             await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("Continue to Part 3", callback_data=f'{userID}continue_part3')],
                 [InlineKeyboardButton("Retake Part 2", callback_data=f'{userID}retake_part2')],
-                [InlineKeyboardButton("Show Results", callback_data=f'{userID}show_part2_results')],
+                [InlineKeyboardButton("Check Your Score ✅", callback_data=f'{userID}show_part2_results')],
                 [InlineKeyboardButton("End the Test", callback_data=f'{userID}end_test')]
             ]))
 
@@ -1712,7 +1890,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=update.effective_chat.id, text=summary_message)
             
             keyboard = [
-                [InlineKeyboardButton("Show Results", callback_data=f'{userID}part3_show_results')],
+                [InlineKeyboardButton("Check Your Score ✅", callback_data=f'{userID}part3_show_results')],
                 [InlineKeyboardButton("Retake Part 3", callback_data=f'{userID}part3_retake')],
                 [InlineKeyboardButton("End Test", callback_data=f'{userID}end_test')]
             ]
@@ -1885,7 +2063,7 @@ async def change_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("Arabic", callback_data=f'{userID}language2_Arabic'),
             InlineKeyboardButton("Urdu", callback_data=f'{userID}language2_Urdu')],
-            [InlineKeyboardButton("Chinese", callback_data=f'{userID}language2_Chinese'),
+            [InlineKeyboardButton("Uzbek", callback_data=f'{userID}language2_Uzbek'),
             InlineKeyboardButton("Persian", callback_data=f'{userID}language2_Persian')],
             [InlineKeyboardButton("Hindi", callback_data=f'{userID}language2_Hindi'),
             InlineKeyboardButton("Other", callback_data=f'{userID}language2_other')]
@@ -1941,7 +2119,8 @@ async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, tex
             [KeyboardButton("Start Test")],
             [KeyboardButton("IELTS Writing 📝"),KeyboardButton("Show Progress")],
             [KeyboardButton("Contact Me"), KeyboardButton("Bot Channel")],
-            [KeyboardButton("Change language"), KeyboardButton("Change voice")],
+            [KeyboardButton("Settings")],
+            # [KeyboardButton("Change language"), KeyboardButton("Change voice")],
         ]
         user_id = update.effective_user.id
         if user_id in ADMIN_IDS:
@@ -2144,129 +2323,6 @@ async def check_user_attempts(update: Update, context: ContextTypes.DEFAULT_TYPE
         # In case of an error, we'll allow the attempt but won't update the database
         user_data['remaining_attempts'] = 5  # Set a default value in case of error
         return True
-
-# async def convert_text_to_audio(text,examiner_voice):
-#     # global  examiner_voice
-#     try:
-#         # global  examiner_voice
-#         # await score_voice(update, context)
-#         print("convert text to audio")
-#         if not text.strip():
-#             raise ValueError("🚨 Input text contains no characters.")
-#         # user_data = context.user_data.setdefault('user_data', {})
-#         # print("user_data['examiner_voice'] ",user_data['examiner_voice'])
-#         # examiner_voice = user_data['examiner_voice']
-#         if examiner_voice == "":
-#             examiner_voice = "Liv" 
-
-#         unreal_speech_api = random.choice(unreal_speech_API_keys)    
-#         response = requests.post(
-#             'https://api.v7.unrealspeech.com/stream',
-#             headers={
-#                 'Authorization': f"Bearer {unreal_speech_api}" 
-                
-#             },
-#             json={
-#                 'Text': text,
-#                 'VoiceId': examiner_voice,
-#                 'Bitrate': '64k',
-#                 'Speed': '0',
-#                 'Pitch': '1',
-#                 'Codec': 'libmp3lame',
-#             }
-#         )
-        
-#         if response.status_code == 200:
-#             # Save the audio content to a file
-#             with open('audio.oga', 'wb') as f:
-#                 f.write(response.content)
-            
-#             return 'audio.oga'
-#         else:
-#             raise Exception(f"🚨 Failed to convert text to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
-#     except Exception as e:
-        
-#         print("convert text to audio second option")
-#         if not text.strip():
-#             raise ValueError("Input text contains no characters.")
-        
-#         if examiner_voice == "":
-#             examiner_voice = "Liv" 
-#         unreal_speech_api = random.choice(unreal_speech_API_keys) 
-#         response = requests.post(
-#             'https://api.v7.unrealspeech.com/stream',
-#             headers={
-#                 'Authorization': f"Bearer {unreal_speech_api}"
-#             },
-#             json={
-#                 'Text': text,
-#                 'VoiceId': examiner_voice,
-#                 'Bitrate': '64k',
-#                 'Speed': '0',
-#                 'Pitch': '1',
-#                 'Codec': 'libmp3lame',
-#             }
-#         )
-        
-#         if response.status_code == 200:
-#             # Save the audio content to a file
-#             with open('audio.oga', 'wb') as f:
-#                 f.write(response.content)
-            
-#             return 'audio.oga'
-#         else:
-#             raise Exception(f"🚨 Failed to convert text to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
-
-# async def convert_text_to_audio(text, examiner_voice):
-#   if not text.strip():
-#       raise ValueError("🚨 Input text contains no characters.")
-  
-#   if examiner_voice == "":
-#       examiner_voice = "Liv"
-
-# #   unreal_speech_API_keys = ["key1", "key2", "key3"]  # Replace with your actual API keys
-  
-#   for attempt in range(3):
-#       try:
-#         #   print(f"Attempting to convert text to audio (Attempt {attempt + 1})")
-#           unreal_speech_api = random.choice(unreal_speech_API_keys)
-#           response = requests.post(
-#               'https://api.v7.unrealspeech.com/stream',
-#               headers={
-#                 #   'Authorization': f"Bearer {unreal_speech_api}"
-#                 'Authorization' : 'Bearer O1NloOK2SySJS72tnQ9ZaeRDYQPWecclkKgK6v1UmOsvfpsuSLDBTb'
-#               },
-#               json={
-#                   'Text': text,
-#                   'VoiceId': examiner_voice,
-#                   'Bitrate': '64k',
-#                   'Speed': '0',
-#                   'Pitch': '1',
-#                   'Codec': 'libmp3lame',
-#               }
-#           )
-          
-#           if response.status_code == 200:
-#               with open('audio.oga', 'wb') as f:
-#                   f.write(response.content)
-#               return 'audio.oga'
-#           else:
-#               print(f"🚨 Attempt {attempt + 1} failed. Status code: {response.status_code}")
-#               if attempt == 0:
-#                   print("Trying second option...")
-#                   continue
-#               else:
-#                   raise Exception(f"🚨 Failed to convert text to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
-      
-#       except Exception as e:
-#           if attempt == 0:
-#               print(f"Error in attempt {attempt + 1}: {str(e)}")
-#               print("Trying second option...")
-#               continue
-#           else:
-#               raise Exception(f"🚨 Both attempts to convert text to audio failed. Last error: {str(e)}")
-
-#   raise Exception("🚨 Failed to convert text to audio after all attempts.")
 
 async def convert_text_to_audio(text, examiner_voice):
 
@@ -2710,7 +2766,7 @@ async def generate_feedback_with_llm(prompt,context: ContextTypes.DEFAULT_TYPE):
         user_data['generate_feedback_with_llm'] = feedback
         return user_data['generate_feedback_with_llm']
 
-
+# unreal_speech_api = random.choice(unreal_speech_API_keys)
 
 async def convert_answer_to_audio(user_answer, speed,examiner_voice):
     # global  examiner_voice
@@ -2761,8 +2817,8 @@ async def convert_answer_to_audio(user_answer, speed,examiner_voice):
               print(f"Attempt {attempts + 1} failed: {e}")
               attempts += 1
               continue
-      # print(f"First attempt failed: {e}")
-      print("🚨 convert answer to audio second option")
+      print(f"First attempt failed: {e}")
+      print("convert answer to audio second option")
       try:
           return make_request(user_answer, examiner_voice,"KtOIJsoP6mzYmu4WUJx3aGrEWMhEUdl4kUYAQPM7VOR08bQVcIXA7x")
       except Exception as e:
@@ -2809,7 +2865,6 @@ async def convert_answer_to_audio(user_answer, speed,examiner_voice):
         #     else:
         #         print(f"🚨 Error converting answer to audio. Status code: {response.status_code} API key: {unreal_speech_api}")
         #         return ""  # Return an empty string instead of None
-
 
 
 async def translate_feedback(user_id, feedback, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2996,7 +3051,7 @@ async def ask_test_part(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         keyboard = [
             [KeyboardButton("Part 1"), KeyboardButton("Part 2")],
-            [KeyboardButton("Part 3"), KeyboardButton("Mock Test")],
+            [KeyboardButton("Part 3"), KeyboardButton("Mock Test (Full test)")],
             [KeyboardButton("Main menu")]
         ]
         reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
@@ -3163,7 +3218,7 @@ async def show_results(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("Please select one of these options.", reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("Continue to Part 2", callback_data=f'{userID}continue_part_2')],
             [InlineKeyboardButton("Retake Part 1", callback_data=f'{userID}retake_part_1')],
-            [InlineKeyboardButton("Show Results", callback_data=f'{userID}show_results')],
+            [InlineKeyboardButton("Check Your Score ✅", callback_data=f'{userID}show_results')],
             [InlineKeyboardButton("End the Test", callback_data=f'{userID}end_test')]
         ]))
     except Exception as e:
@@ -3510,7 +3565,10 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
             # Send feedback report
             await send_long_message(update, context, feedback_report)
-
+            try:
+                await send_recommendations(update, context, feedback_report)
+            except Exception as e:
+                print(e)
             # Display feedback visualization
             await display_feedback(update, context, overall_avg, pronunciation_avg, fluency_avg, grammar_avg, vocabulary_avg)
 
@@ -4091,7 +4149,10 @@ async def show_result2(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
 
             await send_long_message(update, context, feedback2_report)
-
+            try:
+                await send_recommendations(update, context, feedback2_report)
+            except Exception as e:
+                print(e)
             await display_feedback(update, context, overall_score, pronunciation_score, fluency_score, grammar_score, vocabulary_score)
 
             band_score = f"Your estimated IELTS band score for Part 2 is: {overall_score:.1f}"
@@ -4572,7 +4633,7 @@ async def show_part3_summary(update: Update, context: ContextTypes.DEFAULT_TYPE)
         user_data['user_id'] = str(user_id)
         userID = user_data['user_id']
         keyboard = [
-            [InlineKeyboardButton("Show Results", callback_data=f'{userID}part3_show_results')],
+            [InlineKeyboardButton("Check Your Score ✅", callback_data=f'{userID}part3_show_results')],
             [InlineKeyboardButton("Retake Part 3", callback_data=f'{userID}part3_retake')],
             [InlineKeyboardButton("End Test", callback_data=f'{userID}end_test')]
         ]
@@ -4971,7 +5032,10 @@ async def part3_show_results(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
 
             await send_long_message(update, context, overall_feedback3)
-
+            try:
+                await send_recommendations(update, context, overall_feedback3)
+            except Exception as e:
+                print(e)
             await display_feedback(update, context, overall_avg, pronunciation_avg, fluency_avg, grammar_avg, vocabulary_avg)
 
             band_score = f"Your estimated IELTS band score is: {overall_avg:.1f}"
@@ -5388,7 +5452,7 @@ async def mock_part3_process(update: Update, context: ContextTypes.DEFAULT_TYPE)
             user_data['user_id'] = str(user_id)
             userID = user_data['user_id']
             keyboard = [
-                [InlineKeyboardButton("Show Results", callback_data=f'{userID}mock_test_show_results')],
+                [InlineKeyboardButton("Check Your Score ✅", callback_data=f'{userID}mock_test_show_results')],
                 [InlineKeyboardButton("Retake Mock Test", callback_data=f'{userID}mock_test_retake')],
                 [InlineKeyboardButton("End Test", callback_data=f'{userID}end_test')]
             ]
@@ -5677,6 +5741,10 @@ async def show_mock_test_results(update: Update, context: ContextTypes.DEFAULT_T
 
             # Send feedback and scores
             await send_long_message(update, context, overall_mock_feedback)
+            try:
+                await send_recommendations(update, context, overall_mock_feedback)
+            except Exception as e:
+                print(e)
             await display_feedback(update, context, overall_avg_scores['overall'], overall_avg_scores['pronunciation'],
                                    overall_avg_scores['fluency'], overall_avg_scores['grammar'], overall_avg_scores['vocabulary'])
 
@@ -6541,30 +6609,184 @@ async def _translate_and_send_mock_test_detailed_feedback(update, context, user_
         await context.bot.send_message(chat_id=chat_id, text="What would you like to do next?", reply_markup=reply_markup)   
 #------------------------- Broadcasting ----------------------------------
 
-async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  user_id = update.effective_user.id
-  if user_id not in ADMIN_IDS:
-      await update.message.reply_text("You are not authorized to use this command.")
+# async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#   user_id = update.effective_user.id
+#   if user_id not in ADMIN_IDS:
+#       await update.message.reply_text("You are not authorized to use this command.")
+#       return
+
+#   context.user_data['broadcast_messages'] = []
+#   context.user_data['in_broadcast_mode'] = True
+  
+#   keyboard = [
+#       [KeyboardButton("Done"), KeyboardButton("Cancel")]
+#   ]
+#   reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+  
+#   await update.message.reply_text(
+#       "Please send the messages you want to broadcast. You can send multiple messages (text, image, or video). "
+#       "When you're finished, click 'Done'. To cancel the broadcast, click 'Cancel'.",
+#       reply_markup=reply_markup
+#   )
+# async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#   if update.message.text and update.message.text.lower() == '/done':
+#       if not context.user_data.get('broadcast_messages'):
+#           await update.message.reply_text("You haven't sent any messages to broadcast. Please send at least one message.")
+#           return
+
+#       keyboard = [
+#           [InlineKeyboardButton("Confirm", callback_data="confirm_broadcast"),
+#            InlineKeyboardButton("Cancel", callback_data="cancel_broadcast")]
+#       ]
+#       reply_markup = InlineKeyboardMarkup(keyboard)
+      
+#       await update.message.reply_text("Here's a preview of your broadcast messages:", reply_markup=reply_markup)
+#       for message in context.user_data['broadcast_messages']:
+#           await message.copy(chat_id=update.effective_chat.id)
+      
+#       # Exit broadcast mode
+#       context.user_data['in_broadcast_mode'] = False
+#   else:
+#       context.user_data['broadcast_messages'].append(update.message)
+#       await update.message.reply_text("Message added to broadcast. Send more messages or /done when finished.")
+
+# async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#   query = update.callback_query
+#   await query.answer()
+  
+#   if query.data == "confirm_broadcast":
+#       await query.edit_message_text("Broadcasting messages to all users...")
+      
+#       user_ids = await get_all_user_ids()
+#       broadcast_messages = context.user_data['broadcast_messages']
+#       success_count = 0
+#       fail_count = 0
+      
+#       for i in range(0, len(user_ids), 5):
+#           batch = user_ids[i:i+5]
+#           tasks = [send_broadcast_messages(broadcast_messages, user_id, context,update) for user_id in batch]
+#           results = await asyncio.gather(*tasks, return_exceptions=True)
+          
+#           for result in results:
+#               if isinstance(result, Exception):
+#                   fail_count += 1
+#               else:
+#                   success_count += 1
+          
+#           await asyncio.sleep(1)
+      
+#       await query.edit_message_text(f"Broadcast complete.\nSuccessful: {success_count}\nFailed: {fail_count}")
+#   else:
+#       await query.edit_message_text("Broadcast cancelled.")
+
+#   # Clear broadcast data and return to main menu
+#   context.user_data.pop('broadcast_messages', None)
+#   context.user_data['in_broadcast_mode'] = False
+#   await show_main_menu(update, context, "Returning to main menu.")
+
+# async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#   query = update.callback_query
+#   await query.answer()
+  
+#   if query.data == "confirm_broadcast":
+#       await query.edit_message_text("Broadcasting messages...")
+      
+#       if context.user_data.get('broadcast_target') == 'all':
+#           user_ids = await get_all_user_ids()
+#       else:
+#         #   user_ids = await get_users_never_practiced(context)
+#           user_ids = await get_all_user_ids()
+#       broadcast_messages = context.user_data.get('broadcast_messages', [])
+#       success_count = 0
+#       fail_count = 0
+      
+#       for i in range(0, len(user_ids), 5):
+#           batch = user_ids[i:i+5]
+#           tasks = [send_broadcast_messages(broadcast_messages, user_id, context, update) for user_id in batch]
+#           results = await asyncio.gather(*tasks, return_exceptions=True)
+          
+#           for result in results:
+#               if isinstance(result, Exception):
+#                   fail_count += 1
+#               else:
+#                   success_count += 1
+          
+#           await asyncio.sleep(1)
+      
+#       target_text = "all users" if context.user_data.get('broadcast_target') == 'all' else "users who never practiced"
+#       await query.edit_message_text(f"Broadcast to {target_text} complete.\nSuccessful: {success_count}\nFailed: {fail_count}")
+#   else:
+#       await query.edit_message_text("Broadcast cancelled.")
+
+#   # Clear broadcast data and return to main menu
+#   context.user_data.pop('broadcast_messages', None)
+#   context.user_data.pop('broadcast_target', None)
+#   context.user_data['in_broadcast_mode'] = False
+#   await show_main_menu(update, context, "Returning to main menu.")
+async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  query = update.callback_query
+  await query.answer()
+  
+  if query.data == "confirm_broadcast":
+      await query.edit_message_text("Broadcasting messages...")
+      
+      if context.user_data.get('broadcast_target') == 'all':
+          user_ids = await get_all_user_ids()
+      else:
+          user_ids = await get_users_never_practiced()
+        #   user_ids = await get_all_user_ids()
+      # Ensure we're not sending "All Users" or "Never Practiced Users" messages
+      broadcast_messages = [
+          msg for msg in context.user_data.get('broadcast_messages', [])
+          if msg.text not in ["All Users", "Never Practiced Users"]
+      ]
+      
+      success_count = 0
+      fail_count = 0
+      
+      for user_id in user_ids:
+          try:
+              for message in broadcast_messages:
+                  if message.text:
+                      await context.bot.send_message(chat_id=user_id, text=message.text)
+                  elif message.photo:
+                      await context.bot.send_photo(chat_id=user_id, photo=message.photo[-1].file_id, caption=message.caption)
+                  elif message.video:
+                      await context.bot.send_video(chat_id=user_id, video=message.video.file_id, caption=message.caption)
+                  elif message.document:
+                      await context.bot.send_document(chat_id=user_id, document=message.document.file_id, caption=message.caption)
+              success_count += 1
+          except Exception as e:
+              print(f"Failed to send broadcast to user {user_id}: {e}")
+              fail_count += 1
+          
+          await asyncio.sleep(0.05)  # To avoid hitting rate limits
+      
+      target_text = "all users" if context.user_data.get('broadcast_target') == 'all' else "users who never practiced"
+      await query.edit_message_text(f"Broadcast to {target_text} complete.\nSuccessful: {success_count}\nFailed: {fail_count}")
+  else:
+      await query.edit_message_text("Broadcast cancelled.")
+
+  # Clear broadcast data
+  context.user_data.pop('broadcast_messages', None)
+  context.user_data.pop('broadcast_target', None)
+  context.user_data['in_broadcast_mode'] = False
+
+
+async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  if not context.user_data.get('in_broadcast_mode'):
       return
 
-  context.user_data['broadcast_messages'] = []
-  context.user_data['in_broadcast_mode'] = True
-  
-  keyboard = [
-      [KeyboardButton("Done"), KeyboardButton("Cancel")]
-  ]
-  reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-  
-  await update.message.reply_text(
-      "Please send the messages you want to broadcast. You can send multiple messages (text, image, or video). "
-      "When you're finished, click 'Done'. To cancel the broadcast, click 'Cancel'.",
-      reply_markup=reply_markup
-  )
-async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  if update.message.text and update.message.text.lower() == '/done':
+  if update.message.text == "Done":
       if not context.user_data.get('broadcast_messages'):
           await update.message.reply_text("You haven't sent any messages to broadcast. Please send at least one message.")
           return
+
+      # Remove "All Users" and "Never Practiced Users" messages from the broadcast list
+      context.user_data['broadcast_messages'] = [
+          msg for msg in context.user_data.get('broadcast_messages', [])
+          if msg.text not in ["All Users", "Never Practiced Users"]
+      ]
 
       keyboard = [
           [InlineKeyboardButton("Confirm", callback_data="confirm_broadcast"),
@@ -6576,372 +6798,138 @@ async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT
       for message in context.user_data['broadcast_messages']:
           await message.copy(chat_id=update.effective_chat.id)
       
-      # Exit broadcast mode
       context.user_data['in_broadcast_mode'] = False
+  elif update.message.text == "Cancel":
+      context.user_data['in_broadcast_mode'] = False
+      await update.message.reply_text("Broadcast cancelled.")
   else:
-      context.user_data['broadcast_messages'].append(update.message)
-      await update.message.reply_text("Message added to broadcast. Send more messages or /done when finished.")
-
-async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  query = update.callback_query
-  await query.answer()
-  
-  if query.data == "confirm_broadcast":
-      await query.edit_message_text("Broadcasting messages to all users...")
-      
-      user_ids = await get_all_user_ids()
-      broadcast_messages = context.user_data['broadcast_messages']
-      success_count = 0
-      fail_count = 0
-      
-      for i in range(0, len(user_ids), 5):
-          batch = user_ids[i:i+5]
-          tasks = [send_broadcast_messages(broadcast_messages, user_id, context,update) for user_id in batch]
-          results = await asyncio.gather(*tasks, return_exceptions=True)
-          
-          for result in results:
-              if isinstance(result, Exception):
-                  fail_count += 1
-              else:
-                  success_count += 1
-          
-          await asyncio.sleep(1)
-      
-      await query.edit_message_text(f"Broadcast complete.\nSuccessful: {success_count}\nFailed: {fail_count}")
-  else:
-      await query.edit_message_text("Broadcast cancelled.")
-
-  # Clear broadcast data and return to main menu
-  context.user_data.pop('broadcast_messages', None)
-  context.user_data['in_broadcast_mode'] = False
-  await show_main_menu(update, context, "Returning to main menu.")
+      context.user_data.setdefault('broadcast_messages', []).append(update.message)
+      await update.message.reply_text("Message added to broadcast. Send more messages or click 'Done' when finished.")
+# async def send_message_copy(chat_id: int, message, context: ContextTypes.DEFAULT_TYPE):
+#   if message.text:
+#       await message.copy(chat_id)
+#   elif message.photo:
+#       await context.bot.send_photo(chat_id, message.photo[-1].file_id, caption=message.caption)
+#   elif message.video:
+#       await context.bot.send_video(chat_id, message.video.file_id, caption=message.caption)
+#   elif message.document:
+#       await context.bot.send_document(chat_id, message.document.file_id, caption=message.caption)
+#   # Add more elif conditions for other types of media if needed
 async def send_message_copy(chat_id: int, message, context: ContextTypes.DEFAULT_TYPE):
   if message.text:
-      await message.copy(chat_id)
+      await context.bot.send_message(chat_id, message.text)
   elif message.photo:
       await context.bot.send_photo(chat_id, message.photo[-1].file_id, caption=message.caption)
   elif message.video:
       await context.bot.send_video(chat_id, message.video.file_id, caption=message.caption)
   elif message.document:
       await context.bot.send_document(chat_id, message.document.file_id, caption=message.caption)
-  # Add more elif conditions for other types of media if needed
-async def send_broadcast_messages(messages, user_id, context: ContextTypes.DEFAULT_TYPE,update: Update,):
+
+# async def send_broadcast_messages(messages, user_id, context: ContextTypes.DEFAULT_TYPE,update: Update,):
+#   try:
+#       for message in messages:
+#           await send_message_copy(user_id, message, context)
+#       return True
+#   except Exception as e:
+#       print(f"Failed to send broadcast to user {user_id} username: {update.effective_user.username}: {e}")
+#       raise e
+async def send_broadcast_messages(messages, user_id, context: ContextTypes.DEFAULT_TYPE, update: Update):
   try:
       for message in messages:
           await send_message_copy(user_id, message, context)
       return True
   except Exception as e:
-      print(f"Failed to send broadcast to user {user_id} username: {update.effective_user.username}: {e}")
-      raise e
+      print(f"Failed to send broadcast to user {user_id}: {e}")
+      return False
 
+async def get_users_never_practiced(context: ContextTypes.DEFAULT_TYPE):
+  if 'never_practiced_users' in context.user_data:
+      return context.user_data['never_practiced_users']
+
+  users = fetch_all_data("ielts_speaking_users")
+  
+  never_practiced = [user['user_id'] for user in users if user.get('practice_count', 0) == 0]
+  
+  context.user_data['never_practiced_users'] = never_practiced
+  
+  return never_practiced
+
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  user_id = update.effective_user.id
+  if user_id not in ADMIN_IDS:
+      await update.message.reply_text("You are not authorized to use this command.")
+      return
+
+  context.user_data['broadcast_messages'] = []
+  context.user_data['in_broadcast_mode'] = True
+  
+  keyboard = [
+      [KeyboardButton("All Users"), KeyboardButton("Never Practiced Users")],
+      [KeyboardButton("Cancel")]
+  ]
+  reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+  
+  await update.message.reply_text(
+      "Please select the target audience for your broadcast:",
+      reply_markup=reply_markup
+  )
+async def handle_broadcast_target(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  target = update.message.text
+  if target == "All Users":
+      context.user_data['broadcast_target'] = 'all'
+  elif target == "Never Practiced Users":
+      context.user_data['broadcast_target'] = 'never_practiced'
+  else:
+      await update.message.reply_text("Invalid selection. Broadcast cancelled.")
+      context.user_data['in_broadcast_mode'] = False
+      return
+
+  # Clear any previously stored broadcast messages
+  context.user_data['broadcast_messages'] = []
+  context.user_data['in_broadcast_mode'] = True
+
+  keyboard = [
+      [KeyboardButton("Done"), KeyboardButton("Cancel")]
+  ]
+  reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+  
+  await update.message.reply_text(
+      "Please send the messages you want to broadcast. You can send multiple messages (text, image, or video). "
+      "When you're finished, click 'Done'. To cancel the broadcast, click 'Cancel'.",
+      reply_markup=reply_markup
+  )
+
+# async def send_weekly_encouragement(context: ContextTypes.DEFAULT_TYPE):
+#   never_practiced_users = await get_users_never_practiced(context)
+#   message = "Hey there! We noticed you haven't tried our IELTS Speaking practice yet. Why not give it a go today? It's a great way to improve your skills!"
+  
+#   success_count = 0
+#   fail_count = 0
+  
+#   for user_id in never_practiced_users:
+#       try:
+#           await context.bot.send_message(chat_id=user_id, text=message)
+#           success_count += 1
+#       except Exception as e:
+#           print(f"Failed to send encouragement to user {user_id}: {e}")
+#           fail_count += 1
+      
+#       await asyncio.sleep(0.05)  # To avoid hitting rate limits
+  
+#   print(f"Weekly encouragement sent. Successful: {success_count}, Failed: {fail_count}")
+#   context.user_data.pop('never_practiced_users', None)
+
+# def setup_weekly_encouragement(application: Application):
+#   job_queue = application.job_queue
+#   job_queue.run_repeating(send_weekly_encouragement, interval=timedelta(days=7), first=timedelta(minutes=1))
 async def get_all_user_ids():
     # Implement this function to fetch user IDs from your Supabase database
     response = supabase.table('ielts_speaking_users').select('user_id').execute()
     return [record['user_id'] for record in response.data]
 # async def get_all_user_ids():
-#   # Implement this function to fetch user IDs from your database
-#   # For testing, you can return a list with just one user ID
-#   return [5357232217]  # Replace with actual implementation
-#-------------------- Statistics ------------------------
-# def generate_bot_statistics():
-#   # Assuming you have a Supabase client set up
-# #   supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-#   # Get all users
-#   users = supabase.table('ielts_speaking_users').select('*').execute()
-  
-#   # Get all practice scores
-#   scores = supabase.table('ielts_speaking_scores').select('*').execute()
-
-#   now = datetime.now(tzutc())
-
-#   # Total number of users
-#   total_users = len(users.data)
-
-#   # Users registered in different time periods
-#   users_yesterday = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 1)
-#   users_last_week = sum(1 for user in users.data if 1 <= (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 7)
-#   users_last_month = sum(1 for user in users.data if 1 <= (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 30)
-
-#   # Users who practiced today
-#   users_practiced_today = sum(1 for user in users.data if user['last_practice_date'] and 
-#                               (now - parse(user['last_practice_date'])).days == 0)
-
-#   # Users in channel
-#   users_in_channel = sum(1 for user in users.data if user['in_channel'] is True)
-
-#   # Users by native language and English level
-#   users_by_language = defaultdict(int)
-#   users_by_level = defaultdict(int)
-#   for user in users.data:
-#       users_by_language[user.get('native_language', 'Unknown')] += 1
-#       users_by_level[user.get('english_level', 'Unknown')] += 1
-
-#   # Users with email
-#   users_with_email = sum(1 for user in users.data if user.get('email'))
-
-#   # Practice statistics
-#   total_practices = sum(user['practice_count'] for user in users.data)
-#   avg_practices_per_user = total_practices / total_users if total_users > 0 else 0
-
-#   # Average scores
-#   avg_scores = {
-#       'part1': sum(score['part1_score'] for score in scores.data if score['part1_score']) / len(scores.data) if scores.data else 0,
-#       'part2': sum(score['part2_score'] for score in scores.data if score['part2_score']) / len(scores.data) if scores.data else 0,
-#       'part3': sum(score['part3_score'] for score in scores.data if score['part3_score']) / len(scores.data) if scores.data else 0,
-#       'mock_test': sum(score['mock_test_score'] for score in scores.data if score['mock_test_score']) / len(scores.data) if scores.data else 0,
-#   }
-
-#   # Generate report
-#   report = f"""
-#   Bot Statistics Report:
-
-#   Total Users: {total_users}
-#   Users Registered:
-#   - Yesterday: {users_yesterday}
-#   - Last Week: {users_last_week}
-#   - Last Month: {users_last_month}
-
-#   Users Practiced Today: {users_practiced_today}
-#   Total Practices: {total_practices}
-#   Average Practices per User: {avg_practices_per_user:.2f}
-
-#   Users in Channel: {users_in_channel}
-#   Users with Email: {users_with_email}
-
-#   Users by Native Language:
-#   {', '.join(f'{lang}: {count}' for lang, count in users_by_language.items())}
-
-#   Users by English Level:
-#   {', '.join(f'{level}: {count}' for level, count in users_by_level.items())}
-
-#   Average Scores:
-#   - Part 1: {avg_scores['part1']:.2f}
-#   - Part 2: {avg_scores['part2']:.2f}
-#   - Part 3: {avg_scores['part3']:.2f}
-#   - Mock Test: {avg_scores['mock_test']:.2f}
-#   """
-
-#   return report
-
-
-# def generate_bot_statistics():
-#     try:
-#         now = datetime.now(tzutc())
-
-#         # Fetch users and scores data from Supabase
-#         users = supabase.table("ielts_speaking_users").select("*").execute()
-#         scores = supabase.table("ielts_speaking_scores").select("*").execute()
-
-#         # Total users
-#         total_users = len(users.data)
-
-#         # Users registered in different time periods
-#         users_today = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 0)
-#         users_yesterday = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 1)
-#         users_last_week = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 7)
-#         users_last_month = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 30)
-
-#         # Users who practiced today
-#         users_practiced_today = sum(1 for user in users.data if user['last_practice_date'] and parse(user['last_practice_date']).date() == now.date())
-
-#         # Users in channel
-#         users_in_channel = sum(1 for user in users.data if user['in_channel'] is True)
-
-#         # Users by native language and English level
-#         users_by_language = defaultdict(int)
-#         users_by_level = defaultdict(int)
-#         for user in users.data:
-#             lang = user.get('native_language', 'Unknown').lower().capitalize()
-#             users_by_language[lang] += 1
-#             users_by_level[user.get('english_level', 'Unknown')] += 1
-
-#         # Total practice count
-#         total_practice_count = sum(user['practice_count'] for user in users.data if user['practice_count'])
-
-#         # Average scores
-#         part1_scores = [score['part1_score'] for score in scores.data if score['part1_score']]
-#         part2_scores = [score['part2_score'] for score in scores.data if score['part2_score']]
-#         part3_scores = [score['part3_score'] for score in scores.data if score['part3_score']]
-#         mock_test_scores = [score['mock_test_score'] for score in scores.data if score['mock_test_score']]
-
-#         avg_scores = {
-#             'part1': sum(part1_scores) / len(part1_scores) if part1_scores else 0,
-#             'part2': sum(part2_scores) / len(part2_scores) if part2_scores else 0,
-#             'part3': sum(part3_scores) / len(part3_scores) if part3_scores else 0,
-#             'mock_test': sum(mock_test_scores) / len(mock_test_scores) if mock_test_scores else 0,
-#         }
-
-#         # Generate the report
-#         report = f"""
-#         📊 Bot Statistics Report
-
-#         👥 Total Users: {total_users}
-#         🆕 New Users:
-#         • Today: {users_today}
-#         • Yesterday: {users_yesterday}
-#         • Last Week: {users_last_week}
-#         • Last Month: {users_last_month}
-
-#         🏋️ Practice Statistics:
-#         • Total Practices: {total_practice_count}
-#         • Users Practiced Today: {users_practiced_today}
-
-#         📺 Channel Membership:
-#         • Users in Channel: {users_in_channel}
-
-#         🌎 Users by Native Language:
-#         {chr(10).join(f"  • {lang}: {count}" for lang, count in sorted(users_by_language.items()))}
-
-#         🎓 Users by English Level:
-#         {chr(10).join(f"  • {level}: {count}" for level, count in sorted(users_by_level.items()))}
-
-#         📈 Average Scores:
-#         • Part 1: {avg_scores['part1']:.2f}
-#         • Part 2: {avg_scores['part2']:.2f}
-#         • Part 3: {avg_scores['part3']:.2f}
-#         • Mock Test: {avg_scores['mock_test']:.2f}
-#         """
-
-#         return report
-#     except Exception as e:
-#         print("generate bot statistics ",e)
-        
-# def parse_date(date_string):
-#   try:
-#       return parse(date_string)
-#   except:
-#       return None
-# def generate_bot_statistics():
-#   try:
-#       now = datetime.now(tzutc())
-#       today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-#       yesterday_start = today_start - timedelta(days=1)
-#       # Fetch users and scores data from Supabase
-#       users = supabase.table("ielts_speaking_users").select("*").execute()
-#       scores = supabase.table("ielts_speaking_scores").select("*").execute()
-
-#       # Total users
-#        # Get total users using COUNT query
-#       total_users_result = supabase.table("ielts_speaking_users").select("*", count="exact").execute()
-#       total_users = total_users_result.count
-
-#       # Users registered in different time periods
-#       users_today = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 0)
-#       users_yesterday = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days == 1)
-#       users_last_week = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 7)
-#       users_last_month = sum(1 for user in users.data if (now - parse(user['start_date']).replace(tzinfo=tzutc())).days <= 30)
-
-#     #   # Practice statistics
-#     #   practices_today = sum(user['practice_count'] for user in users.data 
-#     #                         if user.get('last_attempt_time') and 
-#     #                         parse_date(user['last_attempt_time']) >= today_start)
-      
-#     #   practices_yesterday = sum(user['practice_count'] for user in users.data 
-#     #                             if user.get('last_attempt_time') and 
-#     #                             yesterday_start <= parse_date(user['last_attempt_time']) < today_start)
-
-#     #   # Users who practiced today
-#     #   users_practiced_today = sum(1 for user in users.data 
-#     #                               if user.get('last_attempt_time') and 
-#     #                               parse_date(user['last_attempt_time']) >= today_start)
-
-#     #   # Users who practiced yesterday
-#     #   users_practiced_yesterday = sum(1 for user in users.data 
-#     #                                   if user.get('last_attempt_time') and 
-#     #                                   yesterday_start <= parse_date(user['last_attempt_time']) < today_start)
-#        # Practice statistics
-#       practices_today = 0
-#       practices_yesterday = 0
-#       users_practiced_today = 0
-#       users_practiced_yesterday = 0  
-#       for user in users.data:
-#           last_attempt = parse_date(user.get('last_attempt_time'))
-#           if last_attempt:
-#               if last_attempt >= today_start:
-#                   practices_today += 1
-#                   users_practiced_today += 1
-#               elif yesterday_start <= last_attempt < today_start:
-#                   practices_yesterday += 1
-#                   users_practiced_yesterday += 1
-#       users_practiced_at_least_once = sum(1 for user in users.data if user['practice_count'] > 0)
-#       users_never_practiced = sum(1 for user in users.data if user['practice_count'] == 0)
-#       users_practiced_more_than_10 = sum(1 for user in users.data if user['practice_count'] > 10)
-
-#       # Users who practiced today
-#     #   users_practiced_today = sum(1 for user in users.data if user['last_practice_date'] and parse(user['last_practice_date']).date() == now.date())
-
-#       # Users in channel
-#       users_in_channel = sum(1 for user in users.data if user['in_channel'] is True)
-
-#       # Users by native language and English level
-#       users_by_language = defaultdict(int)
-#       users_by_level = defaultdict(int)
-#       for user in users.data:
-#           lang = user.get('native_language', '').strip()
-#           users_by_language[lang if lang else 'Unknown'] += 1
-#           level = user.get('english_level', '').strip()
-#           users_by_level[level if level else 'Unknown'] += 1
-
-#       # Total practice count
-#       total_practice_count = sum(user['practice_count'] for user in users.data if user['practice_count'])
-
-#       # Average scores
-#       part1_scores = [score['part1_score'] for score in scores.data if score['part1_score']]
-#       part2_scores = [score['part2_score'] for score in scores.data if score['part2_score']]
-#       part3_scores = [score['part3_score'] for score in scores.data if score['part3_score']]
-#       mock_test_scores = [score['mock_test_score'] for score in scores.data if score['mock_test_score']]
-
-#       avg_scores = {
-#           'part1': sum(part1_scores) / len(part1_scores) if part1_scores else 0,
-#           'part2': sum(part2_scores) / len(part2_scores) if part2_scores else 0,
-#           'part3': sum(part3_scores) / len(part3_scores) if part3_scores else 0,
-#           'mock_test': sum(mock_test_scores) / len(mock_test_scores) if mock_test_scores else 0,
-#       }
-
-#       # Generate the report
-#       report = f"""
-# 📊 Bot Statistics Report
-
-# 👥 Total Users: {total_users}
-# 🆕 New Users:
-# • Today: {users_today}
-# • Yesterday: {users_yesterday}
-# • Last Week: {users_last_week}
-# • Last Month: {users_last_month}
-
-# 🏋️ Practice Statistics:
-# • Total Practices: {total_practice_count}
-# • Practices Today: {practices_today}
-# • Users Practiced Today: {users_practiced_today}
-# • Practices Yesterday: {practices_yesterday}
-# • Users Practiced Yesterday: {users_practiced_yesterday}
-
-# 👨‍🎓 User Practice Breakdown:
-# • Practiced at least once: {users_practiced_at_least_once} ({users_practiced_at_least_once/total_users*100:.1f}%)
-# • Never practiced: {users_never_practiced} ({users_never_practiced/total_users*100:.1f}%)
-# • Practiced more than 10 times: {users_practiced_more_than_10} ({users_practiced_more_than_10/total_users*100:.1f}%)
-
-# 📺 Channel Membership:
-# • Users in Channel: {users_in_channel} ({users_in_channel/total_users*100:.1f}%)
-
-# 🌎 Users by Native Language:
-# {chr(10).join(f"  • {lang}: {count} ({count/total_users*100:.1f}%)" for lang, count in sorted(users_by_language.items(), key=lambda x: x[1], reverse=True))}
-
-# 🎓 Users by English Level:
-# {chr(10).join(f"  • {level}: {count} ({count/total_users*100:.1f}%)" for level, count in sorted(users_by_level.items(), key=lambda x: x[1], reverse=True))}
-
-# 📈 Average Scores:
-# • Part 1: {avg_scores['part1']:.2f}
-# • Part 2: {avg_scores['part2']:.2f}
-# • Part 3: {avg_scores['part3']:.2f}
-# • Mock Test: {avg_scores['mock_test']:.2f}
-# """
-
-#       return report
-#   except Exception as e:
-#       print("generate bot statistics ", e)
-#       return "An error occurred while generating statistics."
+#     # For testing, we'll return only the specified user ID
+#     print("Fetching test user ID")
+#     return [5357232217,7345217368]
 def parse_date(date_string):
   if not date_string:
       return None
@@ -6951,25 +6939,38 @@ def parse_date(date_string):
   except:
       return None
 
+def fetch_all_data(table_name, select_query="*"):
+  all_data = []
+  page = 1
+  while True:
+      result = supabase.table(table_name).select(select_query).range((page-1)*1000, page*1000-1).execute()
+      all_data.extend(result.data)
+      if len(result.data) < 1000:
+          break
+      page += 1
+      time.sleep(1)  # Add a small delay between requests
+  return all_data
+
 def generate_bot_statistics():
   try:
       now = datetime.now(tzutc())
       today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
       yesterday_start = today_start - timedelta(days=1)
+      week_ago = today_start - timedelta(days=7)
+      month_ago = today_start - timedelta(days=30)
 
-      # Get total users using COUNT query
-      total_users_result = supabase.table("ielts_speaking_users").select("*", count="exact").execute()
-      total_users = total_users_result.count
+      # Fetch all data
+      users = fetch_all_data("ielts_speaking_users")
+      scores = fetch_all_data("ielts_speaking_scores")
+      subscriptions = fetch_all_data("bot_subscriptions")
 
-      # Fetch users and scores data from Supabase
-      users = supabase.table("ielts_speaking_users").select("*").execute()
-      scores = supabase.table("ielts_speaking_scores").select("*").execute()
+      total_users = len(users)
 
       # Users registered in different time periods
-      users_today = sum(1 for user in users.data if parse_date(user['start_date']) and (now - parse_date(user['start_date'])).days == 0)
-      users_yesterday = sum(1 for user in users.data if parse_date(user['start_date']) and (now - parse_date(user['start_date'])).days == 1)
-      users_last_week = sum(1 for user in users.data if parse_date(user['start_date']) and (now - parse_date(user['start_date'])).days <= 7)
-      users_last_month = sum(1 for user in users.data if parse_date(user['start_date']) and (now - parse_date(user['start_date'])).days <= 30)
+      users_today = sum(1 for user in users if parse_date(user['start_date']) and (now - parse_date(user['start_date'])).days == 0)
+      users_yesterday = sum(1 for user in users if parse_date(user['start_date']) and (now - parse_date(user['start_date'])).days == 1)
+      users_last_week = sum(1 for user in users if parse_date(user['start_date']) and (now - parse_date(user['start_date'])).days <= 7)
+      users_last_month = sum(1 for user in users if parse_date(user['start_date']) and (now - parse_date(user['start_date'])).days <= 30)
 
       # Practice statistics (completed tests)
       completed_practices_today = 0
@@ -6979,7 +6980,7 @@ def generate_bot_statistics():
       practice_types = defaultdict(int)
       practice_hours = defaultdict(int)
 
-      for score in scores.data:
+      for score in scores:
           user_id = score.get('user_id')
           for date_field, type_name in [('part1_date', 'Part 1'), ('part2_date', 'Part 2'), ('part3_date', 'Part 3'), ('mock_test_date', 'Mock Test')]:
               practice_date = parse_date(score.get(date_field))
@@ -6999,7 +7000,7 @@ def generate_bot_statistics():
       users_attempted_today = set()
       users_attempted_yesterday = set()
 
-      for user in users.data:
+      for user in users:
           last_practice_date = parse_date(user.get('last_practice_date'))
           if last_practice_date:
               if last_practice_date >= today_start:
@@ -7012,12 +7013,12 @@ def generate_bot_statistics():
       # Total practice statistics
       total_practices_today = completed_practices_today + practice_attempts_today
       total_practices_yesterday = completed_practices_yesterday + practice_attempts_yesterday
-      total_users_practiced_today = len(users_completed_today)
-      total_users_practiced_yesterday = len(users_completed_yesterday)
+      total_users_practiced_today = len(users_completed_today.union(users_attempted_today))
+      total_users_practiced_yesterday = len(users_completed_yesterday.union(users_attempted_yesterday))
 
       # Total practice count
-      total_completed_practices = sum(1 for score in scores.data for date_field in ['part1_date', 'part2_date', 'part3_date', 'mock_test_date'] if score.get(date_field))
-      total_practice_attempts = sum(1 for user in users.data if user.get('last_practice_date'))
+      total_completed_practices = sum(1 for score in scores for date_field in ['part1_date', 'part2_date', 'part3_date', 'mock_test_date'] if score.get(date_field))
+      total_practice_attempts = sum(1 for user in users if user.get('last_practice_date'))
       total_practice_count = total_completed_practices + total_practice_attempts
 
       # Calculate average practices per active user
@@ -7033,12 +7034,12 @@ def generate_bot_statistics():
 
       # Users who practiced at least once, never practiced, and practiced more than 10 times
       user_practice_counts = defaultdict(int)
-      for score in scores.data:
+      for score in scores:
           user_id = score.get('user_id')
           for date_field in ['part1_date', 'part2_date', 'part3_date', 'mock_test_date']:
               if score.get(date_field):
                   user_practice_counts[user_id] += 1
-      for user in users.data:
+      for user in users:
           if user.get('last_practice_date'):
               user_practice_counts[user['user_id']] += 1
 
@@ -7047,22 +7048,22 @@ def generate_bot_statistics():
       users_practiced_more_than_10 = sum(1 for count in user_practice_counts.values() if count > 10)
 
       # Users in channel
-      users_in_channel = sum(1 for user in users.data if user['in_channel'] is True)
+      users_in_channel = sum(1 for user in users if user['in_channel'] is True)
 
       # Users by native language and English level
       users_by_language = defaultdict(int)
       users_by_level = defaultdict(int)
-      for user in users.data:
+      for user in users:
           lang = user.get('native_language', '').strip()
           users_by_language[lang if lang else 'Unknown'] += 1
           level = user.get('english_level', '').strip()
           users_by_level[level if level else 'Unknown'] += 1
 
       # Average scores
-      part1_scores = [score['part1_score'] for score in scores.data if score['part1_score']]
-      part2_scores = [score['part2_score'] for score in scores.data if score['part2_score']]
-      part3_scores = [score['part3_score'] for score in scores.data if score['part3_score']]
-      mock_test_scores = [score['mock_test_score'] for score in scores.data if score['mock_test_score']]
+      part1_scores = [score['part1_score'] for score in scores if score.get('part1_score')]
+      part2_scores = [score['part2_score'] for score in scores if score.get('part2_score')]
+      part3_scores = [score['part3_score'] for score in scores if score.get('part3_score')]
+      mock_test_scores = [score['mock_test_score'] for score in scores if score.get('mock_test_score')]
 
       avg_scores = {
           'part1': sum(part1_scores) / len(part1_scores) if part1_scores else 0,
@@ -7071,7 +7072,18 @@ def generate_bot_statistics():
           'mock_test': sum(mock_test_scores) / len(mock_test_scores) if mock_test_scores else 0,
       }
 
-       # Generate the report
+      # Subscription statistics
+      total_subscriptions = len(subscriptions)
+      subscriptions_today = sum(1 for sub in subscriptions if parse_date(sub['start_date']) >= today_start)
+      subscriptions_yesterday = sum(1 for sub in subscriptions if yesterday_start <= parse_date(sub['start_date']) < today_start)
+      subscriptions_last_week = sum(1 for sub in subscriptions if week_ago <= parse_date(sub['start_date']) < today_start)
+      subscriptions_last_month = sum(1 for sub in subscriptions if month_ago <= parse_date(sub['start_date']) < today_start)
+
+      active_subscriptions = sum(1 for sub in subscriptions if sub['status'] == 'active')
+      expired_subscriptions = sum(1 for sub in subscriptions if sub['status'] == 'expired')
+      canceled_subscriptions = sum(1 for sub in subscriptions if sub['status'] == 'canceled')
+
+      # Generate the report
       report = f"""
 📊 Bot Statistics Report
 
@@ -7082,17 +7094,29 @@ def generate_bot_statistics():
 • Last Week: {users_last_week}
 • Last Month: {users_last_month}
 
+💳 Subscription Statistics:
+• Total Subscriptions: {total_subscriptions}
+• New Subscriptions:
+◦ Today: {subscriptions_today}
+◦ Yesterday: {subscriptions_yesterday}
+◦ Last Week: {subscriptions_last_week}
+◦ Last Month: {subscriptions_last_month}
+• Subscription Status:
+◦ Active: {active_subscriptions} ({active_subscriptions/total_subscriptions*100:.1f}%)
+◦ Expired: {expired_subscriptions} ({expired_subscriptions/total_subscriptions*100:.1f}%)
+◦ Canceled: {canceled_subscriptions} ({canceled_subscriptions/total_subscriptions*100:.1f}%)
+
 🏋️ Practice Statistics:
 • Total Practices: {total_practice_count}
-  ◦ Practices with result: {total_completed_practices}
-  ◦ Practices without result: {total_practice_attempts}
+◦ Practices with result: {total_completed_practices}
+◦ Practices without result: {total_practice_attempts}
 • Practices Today: {total_practices_today}
-  ◦ Practices with result: {completed_practices_today}
-  ◦ Practices without result: {practice_attempts_today}
+◦ Practices with result: {completed_practices_today}
+◦ Practices without result: {practice_attempts_today}
 • Users Practiced Today: {total_users_practiced_today}
 • Practices Yesterday: {total_practices_yesterday}
-  ◦ Practices with result: {completed_practices_yesterday}
-  ◦ Practices without result: {practice_attempts_yesterday}
+◦ Practices with result: {completed_practices_yesterday}
+◦ Practices without result: {practice_attempts_yesterday}
 • Users Practiced Yesterday: {total_users_practiced_yesterday}
 • Average Practices per Active User: {avg_practices_per_active_user:.2f}
 • Most Active Practice Type: {most_active_practice_type}
@@ -7117,13 +7141,15 @@ def generate_bot_statistics():
 • Part 2: {avg_scores['part2']:.2f}
 • Part 3: {avg_scores['part3']:.2f}
 • Mock Test: {avg_scores['mock_test']:.2f}
+
+
 """
 
       return report
-  except Exception as e:
-      print("generate bot statistics ", e)
-      return "An error occurred while generating statistics."
 
+  except Exception as e:
+      print(f"Error generating statistics: {e}")
+      return "Error generating statistics. Please try again later."
 # Usage in your bot
 # @bot.on_callback_query(filters.regex("^admin_stats$"))
 async def admin_stats(update, context):
@@ -7136,46 +7162,58 @@ async def admin_stats(update, context):
     stats_report = generate_bot_statistics()
     await update.callback_query.message.reply_text(stats_report)
     await show_main_menu(update, context, "Here are the bot statistics.")
-
+# requirment.txt python-telegram-bot[job-queue]
 def main():
-    print("main")
-    request = HTTPXRequest(
-    connection_pool_size=50,
-    connect_timeout=5.0,
-    read_timeout=200,
-    pool_timeout=10.0
-)
-    # application = Application.builder().token(TOKEN).build()
-    # application = Application.builder().token(BOT_TOKEN).read_timeout(200).connection_pool_size(50).build()
-    application = (
-    Application.builder()
-    .token(BOT_TOKEN)
-    .request(request)
-    .build()
-)
-    start_handler = CommandHandler('start', start)
-    application.add_handler(start_handler)
-    # application.add_handler(CallbackQueryHandler(topic_selection_handler))
-    message_handler_instance = MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler)
-    application.add_handler(message_handler_instance)
+  print("main")
+  request = HTTPXRequest(
+      connection_pool_size=50,
+      connect_timeout=5.0,
+      read_timeout=200,
+      pool_timeout=10.0
+  )
+  
+  application = (
+      Application.builder()
+      .token(BOT_TOKEN)
+      .request(request)
+      .build()
+  )
 
-    voice_handler_instance = MessageHandler(filters.VOICE, voice_handler)
-    application.add_handler(voice_handler_instance)
-    # # Register a handler to wait for the user's voice answer
-    # voice_handler_instance2 = MessageHandler(filters.VOICE & ~filters.COMMAND, handle_voice_answer)
-    # application.add_handler(voice_handler_instance2)
-    application.add_handler(CommandHandler("language", change_language))
-    application.add_handler(CommandHandler("voice", change_voice))
-    button_handler_instance = CallbackQueryHandler(button_handler)
-    # application.add_handler(CommandHandler("broadcast", broadcast_command))
-    application.add_handler(button_handler_instance)
-    application.add_handler(CommandHandler("broadcast", broadcast_command))
-    message_handler_instance = MessageHandler(
-        filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL,
-        message_handler
-    )
-    application.add_handler(message_handler_instance)
-    application.run_polling()
+  # Existing handlers
+  application.add_handler(CommandHandler('start', start))
+  application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+  application.add_handler(MessageHandler(filters.VOICE, voice_handler))
+  application.add_handler(CommandHandler("language", change_language))
+  application.add_handler(CommandHandler("voice", change_voice))
+  application.add_handler(CallbackQueryHandler(button_handler,block=False))
+
+  # New broadcast handlers
+  application.add_handler(CommandHandler("broadcast", broadcast_command))
+  application.add_handler(MessageHandler(
+  filters.TEXT & ~filters.COMMAND & filters.User(ADMIN_IDS) & 
+  filters.Regex("^(All Users|Never Practiced Users)$"),
+  handle_broadcast_target
+))
+  application.add_handler(MessageHandler(
+  filters.TEXT & ~filters.COMMAND & filters.User(ADMIN_IDS),
+  handle_broadcast_message
+))
+  application.add_handler(MessageHandler(
+      (filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL) & 
+      ~filters.COMMAND & filters.User(ADMIN_IDS),
+      handle_broadcast_message
+  ))
+
+  # Setup weekly encouragement
+#   setup_weekly_encouragement(application)
+
+  # General message handler (should be last to avoid conflicts)
+  application.add_handler(MessageHandler(
+      filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL,
+      message_handler
+  ))
+
+  application.run_polling()
 
 if __name__ == '__main__':
     main()
