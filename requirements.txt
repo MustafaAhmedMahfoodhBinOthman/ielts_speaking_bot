@@ -10,3 +10,4 @@ pandas
 openai
 python-dotenv
 unifyai
+youtube-search
