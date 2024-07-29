@@ -6733,7 +6733,7 @@ async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
       if context.user_data.get('broadcast_target') == 'all':
           user_ids = await get_all_user_ids()
       else:
-          user_ids = await get_users_never_practiced()
+          user_ids = await get_users_never_practiced(context)
         #   user_ids = await get_all_user_ids()
       # Ensure we're not sending "All Users" or "Never Practiced Users" messages
       broadcast_messages = [
