@@ -1609,7 +1609,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if voice_file_id:
                 file = await context.bot.get_file(voice_file_id)
                 file_path = file.file_path
-                print(file_path)
+                # print(file_path)
                 user_data.setdefault('part2_voice_urls', []).append(file_path)
 
             await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([
