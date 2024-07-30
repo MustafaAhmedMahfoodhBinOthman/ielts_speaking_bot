@@ -1122,6 +1122,16 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return await show_main_menu(update, context, text2)
         elif text == "IELTS Writing 📝":
             await update.message.reply_text("Now you can evalaute your IELTS Writing essay using our IELTS Writing Evaluator Bot:\n\n@ielts_writing2_bot")
+        elif text == "All Users":
+            context.user_data['broadcast_target'] = 'all'
+            # print(f"Broadcast target all users: {context.user_data.get('broadcast_target')}")
+            print("Target set to all users")
+            await handle_broadcast_target(update ,context)
+        elif text == "Never Practiced Users":
+            context.user_data['broadcast_target'] = 'never_practiced'
+            # print(f"Broadcast target never_practiced: {context.user_data.get('broadcast_target')}")
+            print("Target set to never_practiced")
+            await handle_broadcast_target(update ,context)
         elif context.user_data.get('in_broadcast_mode', False):
           print(f"Handling broadcast message")
           if update.message.text == "Done":
@@ -6729,11 +6739,13 @@ async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
   
   if query.data == "confirm_broadcast":
       await query.edit_message_text("Broadcasting messages...")
-      
+      print(f"Broadcast target: {context.user_data.get('broadcast_target')}")
       if context.user_data.get('broadcast_target') == 'all':
+          print("message to all users")
           user_ids = await get_all_user_ids()
       else:
-          user_ids = await get_users_never_practiced(context)
+          print("message for users_never_practiced")
+        #   user_ids = await get_users_never_practiced(context)
         #   user_ids = await get_all_user_ids()
       # Ensure we're not sending "All Users" or "Never Practiced Users" messages
       broadcast_messages = [
@@ -6875,14 +6887,16 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
   )
 async def handle_broadcast_target(update: Update, context: ContextTypes.DEFAULT_TYPE):
   target = update.message.text
-  if target == "All Users":
-      context.user_data['broadcast_target'] = 'all'
-  elif target == "Never Practiced Users":
-      context.user_data['broadcast_target'] = 'never_practiced'
-  else:
-      await update.message.reply_text("Invalid selection. Broadcast cancelled.")
-      context.user_data['in_broadcast_mode'] = False
-      return
+#   if target == "All Users":
+#       context.user_data['broadcast_target'] = 'all'
+#       print(f"Broadcast target all users: {context.user_data.get('broadcast_target')}")
+#       print("Target set to all users")
+#   elif target == "Never Practiced Users":
+#       context.user_data['broadcast_target'] = 'never_practiced'
+#   else:
+#       await update.message.reply_text("Invalid selection. Broadcast cancelled.")
+#       context.user_data['in_broadcast_mode'] = False
+#       return
 
   # Clear any previously stored broadcast messages
   context.user_data['broadcast_messages'] = []
@@ -6922,14 +6936,14 @@ async def handle_broadcast_target(update: Update, context: ContextTypes.DEFAULT_
 # def setup_weekly_encouragement(application: Application):
 #   job_queue = application.job_queue
 #   job_queue.run_repeating(send_weekly_encouragement, interval=timedelta(days=7), first=timedelta(minutes=1))
-async def get_all_user_ids():
-    # Implement this function to fetch user IDs from your Supabase database
-    response = supabase.table('ielts_speaking_users').select('user_id').execute()
-    return [record['user_id'] for record in response.data]
 # async def get_all_user_ids():
-#     # For testing, we'll return only the specified user ID
-#     print("Fetching test user ID")
-#     return [5357232217,7345217368]
+#     # Implement this function to fetch user IDs from your Supabase database
+#     response = supabase.table('ielts_speaking_users').select('user_id').execute()
+#     return [record['user_id'] for record in response.data]
+async def get_all_user_ids():
+    # For testing, we'll return only the specified user ID
+    print("Fetching test user ID")
+    return [5357232217,7345217368]
 def parse_date(date_string):
   if not date_string:
       return None
