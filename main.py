@@ -2960,7 +2960,7 @@ def is_real_gmail(email):
         print("is real gmail")
         api_keys = [
            "5d64616c34d64b4e98f2647a29648a53",
-            "ff1552bbc5dd4dbc87e5c85645db1cb7",
+            "043fbf429a1a43d09be00d0f74b67f80",
             "e9f36cc57580421184a1bc62fd297fb0",
             "851b30614b984b6588ef91fb6c9b69ab",
         ]
@@ -2972,6 +2972,8 @@ def is_real_gmail(email):
                 querystring = {"api_key": api_key, "email": email}
             
                 response = requests.get(url, params=querystring)
+                if response.status_code != 200:
+                      raise requests.RequestException(f"API returned status code {response.status_code}")
                 data = response.json()
                 deliverability = data.get("deliverability")
             
