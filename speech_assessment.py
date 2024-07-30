@@ -263,8 +263,7 @@ def assess_speech(audio_path, question_prompt):
     while retries < max_retries:
         try:
             # Your SpeechAce API key
-            # api_key="PoZ2Hi%2BM0rzSkhPMFakj6N3cjIPrUJKouPg6qTe%2FCY1AZpZYQHmIizoy%2BlHyu%2BRzhsRMAg6EF0jYeY4c9A8cKdp%2B4yjaoB1d8gK6%2Fu5RuQ8nbKcM%2BhpfEBiABiZc27Lf"
-            api_key = "zeafkj2Y4DA65wwZWtLmcdU6qEnMXDdOy7Koc2UonnBvCfLIDp4m9zqondLqKNAYya%2FldxZKidoEgSlajU8nYAzwfxQtbSUIKuaozWBVc2q5ofGf09nKdkkpqW3iWm%2Fh"
+            api_key="2sUMUsU4la6nhaWDw25QgK8q%2Flb%2FjDJ5Xd3obp5czDeoHEEzpdaRElDOo2F%2FbZXiXsAQtPzA6FiHy5VgJkwObRmkIW6Fn0LJ1StVc1UPLdhe97BkQp1wtzFmf8eeoLPr"
             url = f"https://api.speechace.co/api/scoring/speech/v0.7/json?key={api_key}&dialect=en-us&user_id=XYZ-ABC-99001"
             # api_key = "BJ9VT3IxOwMJJF6iEs5sP%2B880nQZGmGtsK5N2kOXktWbq1n8g3SwsJW1DQO6rkKbqzOV4VK9yvB2TMvFSnBSfO4%2F1NW%2BEHrEegYR%2B8ax%2BGQ6L2cMHYbtxBzcgOV4%2FgEQ"
             # url = f"https://api5.speechace.com/api/scoring/speech/v0.7/json?key={api_key}&dialect=en-us&user_id=XYZ-ABC-99001"
