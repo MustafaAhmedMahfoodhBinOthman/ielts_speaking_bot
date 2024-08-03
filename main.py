@@ -383,14 +383,17 @@ async def user_data_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 #     await show_main_menu(update, context, text)
 async def error_handling(update: Update, context: ContextTypes.DEFAULT_TYPE, error_message):
-    print(f"ID: {update.effective_user.id} Username: {update.effective_user.username} | {error_message}")
-    issue_message = "🚨 Apologies for the inconvenience; there's an issue with the bot. Please try again, and if the problem persists, contact me at @ielts_pathway."
-    text = issue_message
-    userID = update.effective_user.id
-    keyboard = [[InlineKeyboardButton("Try Again 🔁", callback_data=f"{userID}try_again")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+  print(f"ID: {update.effective_user.id} Username: {update.effective_user.username} | {error_message}")
+  issue_message = "🚨 Apologies for the inconvenience; there's an issue with the bot. Please try again, and if the problem persists, contact me at @ielts_pathway."
+  text = issue_message
+  userID = update.effective_user.id
+  keyboard = [[InlineKeyboardButton("Try Again 🔁", callback_data=f"{userID}try_again")]]
+  reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(text, reply_markup=reply_markup)  
+  if update.message:
+      await update.message.reply_text(text, reply_markup=reply_markup)
+  elif update.callback_query:
+      await update.callback_query.message.reply_text(text, reply_markup=reply_markup) 
 async def ask_english_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"{update.effective_user.id} ask english level")
     try:
