@@ -160,7 +160,7 @@ def assess_speech3(audioPath, question_prompt, task_type):
                             "protocol": 2
                         },
                         "app": {
-                            "applicationId": appKey2,
+                            "applicationId": appKey,
                             "sig": connectSig,
                             "timestamp": timestamp
                         }
@@ -171,7 +171,7 @@ def assess_speech3(audioPath, question_prompt, task_type):
                     "param": {
                         "app": {
                             "userId": userId,
-                            "applicationId": appKey2,
+                            "applicationId": appKey,
                             "timestamp": timestamp,
                             "sig": startSig
                         },
