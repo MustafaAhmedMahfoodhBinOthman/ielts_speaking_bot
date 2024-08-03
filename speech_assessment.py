@@ -143,6 +143,7 @@ def assess_speech3(audioPath, question_prompt, task_type):
             audioSampleRate = 16000
             userId = "guest"
 
+            # url = baseURL + coreType
             url = baseURL + coreType
             connectStr = (appKey + timestamp + secretKey).encode("utf-8")
             connectSig = hashlib.sha1(connectStr).hexdigest()
