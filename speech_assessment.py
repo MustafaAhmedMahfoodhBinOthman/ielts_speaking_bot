@@ -144,9 +144,9 @@ def assess_speech3(audioPath, question_prompt, task_type):
             userId = "guest"
 
             url = baseURL + coreType
-            connectStr = (appKey2 + timestamp + secretKey2).encode("utf-8")
+            connectStr = (appKey + timestamp + secretKey).encode("utf-8")
             connectSig = hashlib.sha1(connectStr).hexdigest()
-            startStr = (appKey2 + timestamp + userId + secretKey2).encode("utf-8")
+            startStr = (appKey + timestamp + userId + secretKey).encode("utf-8")
             startSig = hashlib.sha1(startStr).hexdigest()
 
             params = {
