@@ -910,8 +910,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await ask_target_ielts_score(update, context)
                 elif not user_data1['examiner_voice']:
                     await ask_preferred_voice(update, context)
-                elif not user_data1['email']:
-                    print("no email")
+                # elif not user_data1['email']:
+                #     print("no email")
                 else:
                     await ask_test_part(update, context)
             except Exception as e:
