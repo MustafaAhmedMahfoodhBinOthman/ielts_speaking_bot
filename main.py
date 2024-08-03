@@ -375,12 +375,22 @@ async def user_data_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data['continue_countdown'] =True
     user_data['current_question_index'] = 0          
     print(f"{update.effective_user.id} user_data has been updated") 
-async def error_handling(update: Update, context: ContextTypes.DEFAULT_TYPE,error_message):
+# async def error_handling(update: Update, context: ContextTypes.DEFAULT_TYPE,error_message):
+#     print(f"ID: {update.effective_user.id} Username: {update.effective_user.username} | {error_message}")
+#     # await update.message.reply_text(issue_message)
+#     issue_message = "🚨 Sorry for the inconvenience, it seems there is an issue with the bot. If that happens, please contact me @ielts_pathway."
+#     text = issue_message
+    
+#     await show_main_menu(update, context, text)
+async def error_handling(update: Update, context: ContextTypes.DEFAULT_TYPE, error_message):
     print(f"ID: {update.effective_user.id} Username: {update.effective_user.username} | {error_message}")
-    # await update.message.reply_text(issue_message)
-    issue_message = "🚨 Sorry for the inconvenience, it seems there is an issue with the bot. If that happens, please contact me @ielts_pathway."
+    issue_message = "🚨 Apologies for the inconvenience; there's an issue with the bot. Please try again, and if the problem persists, contact me at @ielts_pathway."
     text = issue_message
-    await show_main_menu(update, context, text)  
+    userID = update.effective_user.id
+    keyboard = [[InlineKeyboardButton("Try Again 🔁", callback_data=f"{userID}try_again")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(text, reply_markup=reply_markup)  
 async def ask_english_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"{update.effective_user.id} ask english level")
     try:
@@ -514,7 +524,7 @@ async def feedback_lessons(prompt):
             ]
         client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
         response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
+            model="llama-3.1-70b-instruct",
             messages=messages
         )
         
@@ -889,7 +899,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"Error removing inline keyboard: {e}")
             await check_channel(update, context)
-            try:
+            try: 
                 user = supabase.table('ielts_speaking_users').select('*').eq('user_id', user_id).execute()
                 user_data1 = user.data[0]
                 if not user_data1['native_language']:
@@ -900,6 +910,8 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await ask_target_ielts_score(update, context)
                 elif not user_data1['examiner_voice']:
                     await ask_preferred_voice(update, context)
+                elif not user_data1['email']:
+                    print("no email")
                 else:
                     await ask_test_part(update, context)
             except Exception as e:
@@ -1367,7 +1379,6 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         text = ("🚨 voice handler function ", e)
         await error_handling(update, context,text)
-# Handler for button clicks
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"{update.effective_user.id} button handler")
     try:
@@ -1461,9 +1472,23 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             supabase.table('ielts_speaking_users').update({'examiner_voice': selected_voice}).eq('user_id', user_id).execute()
             await query.edit_message_reply_markup(reply_markup=None)
             await show_main_menu(update, context, f"You have selected {selected_voice} as your examiner voice.")
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="I have created a channel to share updates about the bot and provide the best resources for IELTS. Please join us at @IELTS_SpeakingBOT.")
+            message_text = "I have created a channel to share updates about the bot and provide the best resources for IELTS. Please join us at @IELTS_SpeakingBOT."
+            keyboard_buttons = [[InlineKeyboardButton("Join Channel ✨", url="https://t.me/IELTS_SpeakingBOT")]]
+            reply_markup = InlineKeyboardMarkup(keyboard_buttons)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=message_text, reply_markup=reply_markup)
+            # await context.bot.send_message(chat_id=update.effective_chat.id, text="I have created a channel to share updates about the bot and provide the best resources for IELTS. Please join us at @IELTS_SpeakingBOT.")
         
-       
+        elif query.data == f"{userID}try_again":
+            try:
+                # Remove the inline keyboard from the message with the "Try Again" button
+                await query.edit_message_reply_markup(reply_markup=None)
+            except Exception as e:
+                print(f"Error removing inline keyboard: {e}")
+            
+            await query.message.reply_text("Try again.")
+            await user_data_update(update, context)
+            await ask_test_part(update, context)
+            # await show_main_menu(update,context,"Try Again")
         elif query.data == f"{userID}topic_random":
             selected_topic = random.choice(user_data['part_1_topics'])
             user_data['selected_topic'] = selected_topic
@@ -1757,7 +1782,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❤️")
             print(f"{userID} 👍")
             share_message = (
-                f"Discover this IELTS Speaking Bot! It simulates the IELTS speaking test and provides detailed feedback about your speaking skills and estimated IELTS band score. Try it for free now: https://t.me/ielts_speakingAI_bot"
+                f"Try the IELTS Speaking Bot! It simulates the IELTS speaking test and offers detailed feedback on your speaking skills and estimated band score. Try it for free: https://t.me/ielts_speakingAI_bot"
             )
             keyboard = [
                 [InlineKeyboardButton("Share the Bot", switch_inline_query=share_message)]
@@ -2521,7 +2546,7 @@ async def generate_suggested_answer(question, previous_answer, part_type,context
             ]
         client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
         response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
+            model="llama-3.1-70b-instruct",
             messages=messages
         )
         
@@ -2588,7 +2613,7 @@ async def generate_typical_answers(questions, answers,context: ContextTypes.DEFA
             ]
         client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
         response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
+            model="llama-3.1-70b-instruct",
             messages=messages
         )
         
@@ -2764,7 +2789,7 @@ async def generate_feedback_with_llm(prompt,context: ContextTypes.DEFAULT_TYPE):
             ]
         client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
         response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
+            model="llama-3.1-70b-instruct",
             messages=messages
         )
         
@@ -2947,50 +2972,113 @@ async def translate_feedback(user_id, feedback, update: Update, context: Context
 
 def is_valid_gmail(email):
     try:
-        print("is valid gmail")
+        # print("is valid gmail")
         gmail_regex = re.compile(r'^[a-zA-Z0-9._%+-]+@gmail\.com$')
+        print("is valid gmail")
         return gmail_regex.match(email) is not None
     except Exception as e:
         print("is valid gmail function",e)
         return True
         # await update.message.reply_text(issue_message)
 
-def is_real_gmail(email):
-    try:
-        print("is real gmail")
-        api_keys = [
-           "5d64616c34d64b4e98f2647a29648a53",
-            "043fbf429a1a43d09be00d0f74b67f80",
-            "e9f36cc57580421184a1bc62fd297fb0",
-            "851b30614b984b6588ef91fb6c9b69ab",
-        ]
-        retries = 3
-        while retries > 0:
-            api_key = random.choice(api_keys)
-            try:
-                url = "https://emailvalidation.abstractapi.com/v1"
-                querystring = {"api_key": api_key, "email": email}
-            
-                response = requests.get(url, params=querystring)
-                if response.status_code != 200:
-                      raise requests.RequestException(f"API returned status code {response.status_code}")
-                data = response.json()
-                deliverability = data.get("deliverability")
-            
-                if deliverability == "DELIVERABLE":
-                    return True
-                elif deliverability == "UNDELIVERABLE":
-                    return False
-            except Exception as e:
-                print(f"Error verifying email with API key {api_key}: {e}")
-                retries -= 1
+# def is_real_gmail(email):
+#     print("start is real gmail")
+#     try:
         
-        return True
-    except Exception as e:
-        print("🚨is_real_gmail(email): ",e)
-        return True
-        # await update.message.reply_text(issue_message)
+#         api_keys = [
+#            "5d64616c34d64b4e98f2647a29648a53",
+#             "ff1552bbc5dd4dbc87e5c85645db1cb7",
+#             "e9f36cc57580421184a1bc62fd297fb0",
+#             # "043fbf429a1a43d09be00d0f74b67f80",
+#         ]
+#         retries = 3
+#         while retries > 0:
+#             api_key = random.choice(api_keys)
+#             print(api_key)
+#             try:
+#                 print("check is real email")
+#                 url = "https://emailvalidation.abstractapi.com/v1"
+#                 querystring = {"api_key": api_key, "email": email}
+#                 print("querystring")
+#                 print(querystring)
+#                 response = requests.get(url, params=querystring)
+#                 print("response")
+#                 print(response)
+#                 data = response.json()
+#                 print("data")
+#                 print(data)
+#                 deliverability = data.get("deliverability")
+#                 print("deliverability")
+#                 print(deliverability)
+#                 if deliverability == "DELIVERABLE":
+#                     print("DELIVERABLE")
+#                     return True
+#                 elif deliverability == "UNDELIVERABLE":
+#                     print("UNDELIVERABLE")
+#                     return False
+#             except Exception as e:
+#                 print(f"Error verifying email with API key {api_key}: {e}")
+#                 retries -= 1
+#         print("is real gmail")
+#         return True
+#     except Exception as e:
+#         print("🚨is_real_gmail(email): ",e)
+#         return True
+#         # await update.message.reply_text(issue_message)
 
+def is_real_gmail(email):
+  print("start is real gmail")
+  api_keys = [
+      "si7Zcxl8VhGBXBiJg2Q8PBxhxX35OBT49U0yPuu",
+    "5OH007HvEZ5JmWNVrPXsfmzguN4H3KA0sn5j2KS",
+    "HRTHKnq3c8NCDOHDd6sfLtTbjbo6uHHskdDcPhP",
+    "ojDRXqsv10BKA6dAAYaJDD5FjXesaGF9SZUN5IP",
+  ]
+  retries = 3
+  
+  while retries > 0:
+      api_key = random.choice(api_keys)
+      print(f"Trying API key: {api_key}")
+      try:
+          print("Checking if email is real")
+          url = "https://api.usebouncer.com/v1.1/email/verify"
+          querystring = {"email":email}
+          headers = {"x-api-key": api_key}
+          print("querystring:", querystring)
+          
+        #   response = requests.get(url, params=querystring)
+          response = requests.request("GET", url, headers=headers, params=querystring)
+          print("Response status code:", response.status_code)
+          
+          data = response.json()
+          print("Response data:", data)
+          
+          if response.status_code != 200:
+              raise requests.RequestException(f"API returned status code {response.status_code}")
+          
+          deliverability = data.get("status")
+          print("Deliverability:", deliverability)
+          
+          if deliverability == "deliverable":
+              print("Email is DELIVERABLE")
+              return True
+          elif deliverability == "undeliverable":
+              print("Email is UNDELIVERABLE")
+              return False
+          else:
+              print(f"Unexpected deliverability status: {deliverability}")
+              raise ValueError(f"Unexpected deliverability status: {deliverability}")
+      
+      except (requests.RequestException, ValueError) as e:
+          print(f"Error verifying email with API key {api_key}: {e}")
+          retries -= 1
+      
+      except Exception as e:
+          print(f"Unexpected error: {e}")
+          retries -= 1
+  
+  print("All retries exhausted")
+  return True  # Default to True if all retries fail
 #------------------------ Part 1---------------------------- 
 # Helper function to ask for Part 1 topic
 async def ask_part_1_topic(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3270,7 +3358,7 @@ async def generate_questions(topic,context: ContextTypes.DEFAULT_TYPE):
             ]
             client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
             response = client.chat.completions.create(
-                model="llama-3-70b-instruct",
+                model="llama-3.1-70b-instruct",
                 messages=messages
             )
             result = response.choices[0].message.content
@@ -3338,7 +3426,7 @@ async def generate_interactive_question(previous_question, user_answer, next_que
             ]
         client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
         response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
+            model="llama-3.1-70b-instruct",
             messages=messages
         )
         
@@ -3441,7 +3529,7 @@ async def generate_feedback(scores_list, questions, answers, overall_avg,targete
             ]
         client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
         response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
+            model="llama-3.1-70b-instruct",
             messages=messages
         )
         
@@ -4057,7 +4145,7 @@ async def generate_feedback2(scores_list, questions, answers,overall_score,targe
             ]
         client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
         response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
+            model="llama-3.1-70b-instruct",
             messages=messages
         )
         
@@ -4089,7 +4177,7 @@ async def show_result2(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="Wait a few minutes until results are ready...\n\n[                             ] 0%"
         )
 
-        share_message = f"Discover this IELTS Speaking Bot! It simulates the IELTS speaking test and provides detailed feedback about your speaking skills and estimated IELTS band score. Try it for free now: https://t.me/ielts_speakingAI_bot"
+        share_message = f"Try the IELTS Speaking Bot! It simulates the IELTS speaking test and offers detailed feedback on your speaking skills and estimated band score. Try it for free: https://t.me/ielts_speakingAI_bot"
         keyboard = [[InlineKeyboardButton("Share the Bot", switch_inline_query=share_message)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await ask_channel(update, context)
@@ -4844,7 +4932,7 @@ async def generate_feedback3(scores_list, questions, answers, overall_avg,target
             ]
         client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
         response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
+            model="llama-3.1-70b-instruct",
             messages=messages
         )
         
@@ -4961,7 +5049,7 @@ async def part3_show_results(update: Update, context: ContextTypes.DEFAULT_TYPE)
             text="Wait a few minutes until results are ready...\n\n[                             ] 0%"
         )
 
-        share_message = f"Discover this IELTS Speaking Bot! It simulates the IELTS speaking test and provides detailed feedback about your speaking skills and estimated IELTS band score. Try it for free now: https://t.me/ielts_speakingAI_bot"
+        share_message = f"Try the IELTS Speaking Bot! It simulates the IELTS speaking test and offers detailed feedback on your speaking skills and estimated band score. Try it for free: https://t.me/ielts_speakingAI_bot"
         keyboard = [[InlineKeyboardButton("Share the Bot", switch_inline_query=share_message)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await ask_channel(update, context)
@@ -5634,7 +5722,7 @@ async def show_mock_test_results(update: Update, context: ContextTypes.DEFAULT_T
         progress_message = await context.bot.send_message(chat_id=update.effective_chat.id, text="Wait a few minutes until results are ready...\n\n[                             ] 0%")
 
         # Share message (unchanged)
-        share_message = f"Discover this IELTS Speaking Bot! It simulates the IELTS speaking test and provides detailed feedback about your speaking skills and estimated IELTS band score. Try it for free now: https://t.me/ielts_speakingAI_bot"
+        share_message = f"Try the IELTS Speaking Bot! It simulates the IELTS speaking test and offers detailed feedback on your speaking skills and estimated band score. Try it for free: https://t.me/ielts_speakingAI_bot"
         keyboard = [[InlineKeyboardButton("Share the Bot", switch_inline_query=share_message)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await ask_channel(update, context)
@@ -6161,7 +6249,7 @@ async def generate_overall_feedback(part1_scores, part2_scores, part3_scores, pa
             ]
         client = OpenAI(api_key=perplexity_API, base_url="https://api.perplexity.ai")
         response = client.chat.completions.create(
-            model="llama-3-70b-instruct",
+            model="llama-3.1-70b-instruct",
             messages=messages
         )
         
@@ -6621,120 +6709,6 @@ async def _translate_and_send_mock_test_detailed_feedback(update, context, user_
         await context.bot.send_message(chat_id=chat_id, text="What would you like to do next?", reply_markup=reply_markup)   
 #------------------------- Broadcasting ----------------------------------
 
-# async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#   user_id = update.effective_user.id
-#   if user_id not in ADMIN_IDS:
-#       await update.message.reply_text("You are not authorized to use this command.")
-#       return
-
-#   context.user_data['broadcast_messages'] = []
-#   context.user_data['in_broadcast_mode'] = True
-  
-#   keyboard = [
-#       [KeyboardButton("Done"), KeyboardButton("Cancel")]
-#   ]
-#   reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-  
-#   await update.message.reply_text(
-#       "Please send the messages you want to broadcast. You can send multiple messages (text, image, or video). "
-#       "When you're finished, click 'Done'. To cancel the broadcast, click 'Cancel'.",
-#       reply_markup=reply_markup
-#   )
-# async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#   if update.message.text and update.message.text.lower() == '/done':
-#       if not context.user_data.get('broadcast_messages'):
-#           await update.message.reply_text("You haven't sent any messages to broadcast. Please send at least one message.")
-#           return
-
-#       keyboard = [
-#           [InlineKeyboardButton("Confirm", callback_data="confirm_broadcast"),
-#            InlineKeyboardButton("Cancel", callback_data="cancel_broadcast")]
-#       ]
-#       reply_markup = InlineKeyboardMarkup(keyboard)
-      
-#       await update.message.reply_text("Here's a preview of your broadcast messages:", reply_markup=reply_markup)
-#       for message in context.user_data['broadcast_messages']:
-#           await message.copy(chat_id=update.effective_chat.id)
-      
-#       # Exit broadcast mode
-#       context.user_data['in_broadcast_mode'] = False
-#   else:
-#       context.user_data['broadcast_messages'].append(update.message)
-#       await update.message.reply_text("Message added to broadcast. Send more messages or /done when finished.")
-
-# async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#   query = update.callback_query
-#   await query.answer()
-  
-#   if query.data == "confirm_broadcast":
-#       await query.edit_message_text("Broadcasting messages to all users...")
-      
-#       user_ids = await get_all_user_ids()
-#       broadcast_messages = context.user_data['broadcast_messages']
-#       success_count = 0
-#       fail_count = 0
-      
-#       for i in range(0, len(user_ids), 5):
-#           batch = user_ids[i:i+5]
-#           tasks = [send_broadcast_messages(broadcast_messages, user_id, context,update) for user_id in batch]
-#           results = await asyncio.gather(*tasks, return_exceptions=True)
-          
-#           for result in results:
-#               if isinstance(result, Exception):
-#                   fail_count += 1
-#               else:
-#                   success_count += 1
-          
-#           await asyncio.sleep(1)
-      
-#       await query.edit_message_text(f"Broadcast complete.\nSuccessful: {success_count}\nFailed: {fail_count}")
-#   else:
-#       await query.edit_message_text("Broadcast cancelled.")
-
-#   # Clear broadcast data and return to main menu
-#   context.user_data.pop('broadcast_messages', None)
-#   context.user_data['in_broadcast_mode'] = False
-#   await show_main_menu(update, context, "Returning to main menu.")
-
-# async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#   query = update.callback_query
-#   await query.answer()
-  
-#   if query.data == "confirm_broadcast":
-#       await query.edit_message_text("Broadcasting messages...")
-      
-#       if context.user_data.get('broadcast_target') == 'all':
-#           user_ids = await get_all_user_ids()
-#       else:
-#         #   user_ids = await get_users_never_practiced(context)
-#           user_ids = await get_all_user_ids()
-#       broadcast_messages = context.user_data.get('broadcast_messages', [])
-#       success_count = 0
-#       fail_count = 0
-      
-#       for i in range(0, len(user_ids), 5):
-#           batch = user_ids[i:i+5]
-#           tasks = [send_broadcast_messages(broadcast_messages, user_id, context, update) for user_id in batch]
-#           results = await asyncio.gather(*tasks, return_exceptions=True)
-          
-#           for result in results:
-#               if isinstance(result, Exception):
-#                   fail_count += 1
-#               else:
-#                   success_count += 1
-          
-#           await asyncio.sleep(1)
-      
-#       target_text = "all users" if context.user_data.get('broadcast_target') == 'all' else "users who never practiced"
-#       await query.edit_message_text(f"Broadcast to {target_text} complete.\nSuccessful: {success_count}\nFailed: {fail_count}")
-#   else:
-#       await query.edit_message_text("Broadcast cancelled.")
-
-#   # Clear broadcast data and return to main menu
-#   context.user_data.pop('broadcast_messages', None)
-#   context.user_data.pop('broadcast_target', None)
-#   context.user_data['in_broadcast_mode'] = False
-#   await show_main_menu(update, context, "Returning to main menu.")
 async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
   query = update.callback_query
   await query.answer()
@@ -6747,7 +6721,7 @@ async def confirm_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
           user_ids = await get_all_user_ids()
       else:
           print("message for users_never_practiced")
-        #   user_ids = await get_users_never_practiced(context)
+          user_ids = await get_users_never_practiced(context)
         #   user_ids = await get_all_user_ids()
       # Ensure we're not sending "All Users" or "Never Practiced Users" messages
       broadcast_messages = [
@@ -6819,16 +6793,7 @@ async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT
   else:
       context.user_data.setdefault('broadcast_messages', []).append(update.message)
       await update.message.reply_text("Message added to broadcast. Send more messages or click 'Done' when finished.")
-# async def send_message_copy(chat_id: int, message, context: ContextTypes.DEFAULT_TYPE):
-#   if message.text:
-#       await message.copy(chat_id)
-#   elif message.photo:
-#       await context.bot.send_photo(chat_id, message.photo[-1].file_id, caption=message.caption)
-#   elif message.video:
-#       await context.bot.send_video(chat_id, message.video.file_id, caption=message.caption)
-#   elif message.document:
-#       await context.bot.send_document(chat_id, message.document.file_id, caption=message.caption)
-#   # Add more elif conditions for other types of media if needed
+
 async def send_message_copy(chat_id: int, message, context: ContextTypes.DEFAULT_TYPE):
   if message.text:
       await context.bot.send_message(chat_id, message.text)
@@ -6938,14 +6903,14 @@ async def handle_broadcast_target(update: Update, context: ContextTypes.DEFAULT_
 # def setup_weekly_encouragement(application: Application):
 #   job_queue = application.job_queue
 #   job_queue.run_repeating(send_weekly_encouragement, interval=timedelta(days=7), first=timedelta(minutes=1))
-# async def get_all_user_ids():
-#     # Implement this function to fetch user IDs from your Supabase database
-#     response = supabase.table('ielts_speaking_users').select('user_id').execute()
-#     return [record['user_id'] for record in response.data]
 async def get_all_user_ids():
-    # For testing, we'll return only the specified user ID
-    print("Fetching test user ID")
-    return [5357232217,7345217368]
+    # Implement this function to fetch user IDs from your Supabase database
+    response = supabase.table('ielts_speaking_users').select('user_id').execute()
+    return [record['user_id'] for record in response.data]
+# async def get_all_user_ids():
+#     # For testing, we'll return only the specified user ID
+#     print("Fetching test user ID")
+#     return [5357232217,7345217368]
 def parse_date(date_string):
   if not date_string:
       return None
