@@ -373,6 +373,7 @@ async def user_data_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data['part_3_minute'] = False
     user_data['test_stop'] = False
     user_data['continue_countdown'] =True
+    user_data['speech_super'] = False
     user_data['current_question_index'] = 0          
     print(f"{update.effective_user.id} user_data has been updated") 
 # async def error_handling(update: Update, context: ContextTypes.DEFAULT_TYPE,error_message):
@@ -1220,8 +1221,8 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     user_data['user_id'] = str(user_id)
                     userID = user_data['user_id']
                     await update.message.reply_text(f"Your answer: \n{transcribed_text}\nAre you sure about your answer?", reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("Yes, I am sure", callback_data=f'{userID}part2_confirm_answer')],
-                        [InlineKeyboardButton("Try again", callback_data=f'{userID}part2_retry_answer')]
+                        [InlineKeyboardButton("Yes, I'm sure ✅", callback_data=f'{userID}part2_confirm_answer')],
+                        [InlineKeyboardButton("Try again 🔁", callback_data=f'{userID}part2_retry_answer')]
                     ]))
                 else:
                     await update.message.reply_text("Sorry, I couldn't get your answer. Please try again.")
@@ -1257,8 +1258,8 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             user_data['user_id'] = str(user_id)
                             userID = user_data['user_id']
                             await update.message.reply_text(f"Your answer: \n{transcribed_text}\nAre you sure about your answer?", reply_markup=InlineKeyboardMarkup([
-                                [InlineKeyboardButton("Yes, I am sure", callback_data=f'{userID}confirm_answer')],
-                                [InlineKeyboardButton("Try again", callback_data=f'{userID}retry_answer')]
+                                [InlineKeyboardButton("Yes, I'm sure ✅", callback_data=f'{userID}confirm_answer')],
+                                [InlineKeyboardButton("Try again 🔁", callback_data=f'{userID}retry_answer')]
                             ]))
                         else:
                             await update.message.reply_text("Sorry, I couldn't get your answer. Please try again.")
@@ -1291,8 +1292,8 @@ async def voice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     user_data['user_id'] = str(user_id)
                     userID = user_data['user_id']
                     await update.message.reply_text(f"Your answer: \n{transcribed_text}\nAre you sure about your answer?", reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("Yes, I am sure", callback_data=f'{userID}part3_confirm_answer')],
-                        [InlineKeyboardButton("Try again", callback_data=f'{userID}part3_retry_answer')],
+                        [InlineKeyboardButton("Yes, I'm sure ✅", callback_data=f'{userID}part3_confirm_answer')],
+                        [InlineKeyboardButton("Try again 🔁", callback_data=f'{userID}part3_retry_answer')],
                     ]))
                 else:
                     await update.message.reply_text("Sorry, I couldn't get your answer. Please try again.")
@@ -1599,7 +1600,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             keyboard = [
                 [InlineKeyboardButton("Continue to Part 2", callback_data=f'{userID}continue_part_2')],
-                [InlineKeyboardButton("See Detailed Results", callback_data=f'{userID}detailed_results')],
+                [InlineKeyboardButton("Detailed Results ✅", callback_data=f'{userID}detailed_results')],
                 [InlineKeyboardButton("Retake Part 1", callback_data=f'{userID}retake_part_1')],
                 [InlineKeyboardButton("End the Test", callback_data=f'{userID}end_test')]
             ]
@@ -1812,7 +1813,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             overall_feedback = user_data.get('overall_part2_feedback')
             keyboard = [
                 [InlineKeyboardButton("Continue to Part 3", callback_data=f'{userID}continue_part3')],
-                [InlineKeyboardButton("See Detailed Results", callback_data=f'{userID}detailed2_results')],
+                [InlineKeyboardButton("Detailed Results ✅", callback_data=f'{userID}detailed2_results')],
                 [InlineKeyboardButton("Retake Part 2", callback_data=f'{userID}retake_part2')],
                 [InlineKeyboardButton("End the Test", callback_data=f'{userID}end_test')]
             ]
@@ -1983,7 +1984,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data = context.user_data.get('user_data', {})
             overall_feedback = user_data.get('overall_part3_feedback')
             keyboard = [
-                [InlineKeyboardButton("See Detailed Results", callback_data=f'{userID}part3_detailed_results')],
+                [InlineKeyboardButton("Detailed Results ✅", callback_data=f'{userID}part3_detailed_results')],
                 [InlineKeyboardButton("Retake Part 3", callback_data=f'{userID}part3_retake')],
                 [InlineKeyboardButton("End the Test", callback_data=f'{userID}end_test')]
             ]
@@ -3219,7 +3220,7 @@ async def ask_current_question(update: Update, context: ContextTypes.DEFAULT_TYP
                 [InlineKeyboardButton("Suggest Answer", callback_data=f'{userID}suggest_answer')]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.effective_message.reply_text("Please re-answer the question.", reply_markup=reply_markup)
+            await update.effective_message.reply_text("Please re-answer the question or click the button to suggest an answer.", reply_markup=reply_markup)
         else:
             questions_list = user_data.get('questions', [])
             # answers_list = user_data.get('answers', {})
@@ -3569,7 +3570,7 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         # Send a message asking the user to share the bot
         share_message = (
-            f"Discover this IELTS Speaking Bot! It simulates the IELTS speaking test and provides detailed feedback "
+            f"Try this IELTS Speaking Bot! It simulates the IELTS speaking test and provides detailed feedback "
             f"about your speaking skills and estimated IELTS band score to help you improve. Try it for free now: "
             f"https://t.me/ielts_speakingAI_bot"
         )
@@ -3609,6 +3610,7 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
             processed_scores = await assess_speech_async(audio_url, question_prompt, task_type, context,one_minute1)
             # print(processed_scores)
             if processed_scores:
+                print("processed_scores ",processed_scores)
                 scores_list.append(processed_scores)
                 print(f"{update.effective_user.id} Assessment successful for answer {i + 1}")
             else:
@@ -3625,11 +3627,12 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
             )
 
         if scores_list:
+            # print(scores_list)
             # Delete the waiting message (sticker)
             await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=waiting_message.message_id)
 
             # Calculate average scores
-            overall_avg = sum(score.get("overall", 0) for score in scores_list) / len(scores_list)
+            overall_avg = sum(score.get("overall", 2) for score in scores_list) / len(scores_list)
             pronunciation_avg = sum(score.get("pronunciation", 0) for score in scores_list) / len(scores_list)
             fluency_avg = sum(score.get("fluency", 0) for score in scores_list) / len(scores_list)
             grammar_avg = sum(score.get("grammar", 0) for score in scores_list) / len(scores_list)
@@ -3690,7 +3693,7 @@ async def show_results_part1(update: Update, context: ContextTypes.DEFAULT_TYPE)
             # Provide user options
             keyboard = [
                 [InlineKeyboardButton("Continue to Part 2", callback_data=f'{userID}continue_part_2')],
-                [InlineKeyboardButton("See Detailed Results", callback_data=f'{userID}detailed_results')],
+                [InlineKeyboardButton("Detailed Results ✅", callback_data=f'{userID}detailed_results')],
                 [InlineKeyboardButton("Translate", callback_data=f'{userID}translate_overall_feedback')],
                 [InlineKeyboardButton("Retake Part 1", callback_data=f'{userID}retake_part_1')],
                 [InlineKeyboardButton("End the Test", callback_data=f'{userID}end_test')]
@@ -3735,13 +3738,21 @@ async def assess_speech_async(audio_url, question_prompt, task_type, context: Co
         try:
             print("use speech super assess_speech3 API (part 1)")
             scores, analysis_data = await loop.run_in_executor(executor, assess_speech3, filename, question_prompt, task_type)
+            # user_data['speech_super'] = True
+            # processed_scores = process_speech_super_scores(scores)
         except Exception as e:
             print("🚨 Error on assess_speech3 speech super API and switching to Speech ace API ", e)
             try:
+                print("try speech ace")
                 scores, analysis_data = await loop.run_in_executor(executor, assess_speech, filename, question_prompt)
+                # user_data['speech_super'] = False
+                # processed_scores = process_speechace_scores(scores)
+                print("try speech ace done", scores)
             except Exception as e:
                 print("🚨Error on Speech Ace API and switching to Speech Super API assess_speech2 ", e)
                 scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
+                # user_data['speech_super'] = True
+                # processed_scores = process_speech_super_scores(scores)
         # if one_minute1:  
         #     print("use speech super assess_speech2 API (part 1)")
         #     scores, analysis_data = await loop.run_in_executor(executor, assess_speech2, filename, question_prompt, task_type)
@@ -3816,8 +3827,13 @@ async def assess_speech_async(audio_url, question_prompt, task_type, context: Co
         # else:
         #     processed_scores = process_speechace_scores(scores)
         #     print("process_speechace_scores: ",processed_scores)
+        # if user_data['speech_super']:
+        #     processed_scores = process_speech_super_scores(scores)
+        # else:
+        #     processed_scores = process_speechace_scores(scores)
         try:
             processed_scores = process_speech_super_scores(scores)
+            # print("process_speech_super_scores: ",processed_scores)
         except Exception as e:
             print("🚨 process_speech_super_scores(scores): ", e)
             processed_scores = process_speechace_scores(scores)
@@ -3886,7 +3902,7 @@ async def generate_detailed_feedback(update: Update, context: ContextTypes.DEFAU
             await send_long_message(update, context, feedback)
 
             # Use asyncio.to_thread for CPU-bound operations
-            # if user_data['part_1_minute']:
+            # if user_data['speech_super']:
             #     await asyncio.to_thread(generate_pronunciation_visualization2, analysis_data)
             # else:
             #     await asyncio.to_thread(generate_pronunciation_visualization, analysis_data)
@@ -4272,7 +4288,7 @@ async def show_result2(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             keyboard = [
                 [InlineKeyboardButton("Continue to Part 3", callback_data=f'{userID}continue_part3')],
-                [InlineKeyboardButton("See Detailed Results", callback_data=f'{userID}detailed2_results')],
+                [InlineKeyboardButton("Detailed Results ✅", callback_data=f'{userID}detailed2_results')],
                 [InlineKeyboardButton("Translate", callback_data=f'{userID}translate_overall2_feedback')],
                 [InlineKeyboardButton("Retake Part 2", callback_data=f'{userID}retake_part2')],
                 [InlineKeyboardButton("End the Test", callback_data=f'{userID}end_test')]
@@ -4663,7 +4679,7 @@ async def ask_part3_question(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 [InlineKeyboardButton("Suggest Answer", callback_data=f'{userID}part3_suggest_answer')]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.effective_message.reply_text("Please re-answer the question.", reply_markup=reply_markup)
+            await update.effective_message.reply_text("Please re-answer the question or click the button to suggest an answer.", reply_markup=reply_markup)
         else:
             if current_question_index < len(part3_questions):
                 current_question = part3_questions[current_question_index].strip()
@@ -6620,7 +6636,7 @@ async def translate_mock_test_overall_feedback(update: Update, context: ContextT
         userID = str(user_id)
 
         keyboard = [
-            [InlineKeyboardButton("See Detailed Results", callback_data=f'{userID}mock_test_detailed_results')],
+            [InlineKeyboardButton("Detailed Results ✅", callback_data=f'{userID}mock_test_detailed_results')],
             [InlineKeyboardButton("Retake Mock Test", callback_data=f'{userID}mock_test_retake')],
             [InlineKeyboardButton("End Test", callback_data=f'{userID}end_test')]
         ]
